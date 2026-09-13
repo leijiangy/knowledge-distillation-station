@@ -129,8 +129,8 @@ body {
 .user-meta small { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- 内容区 ---- */
-/* 底部留白加大：避免卡片被浮动分页器遮挡 */
-.content { flex: 1; min-width: 0; padding: 26px var(--content-pad) 96px; }
+/* 底部分页器在流内（sticky），底部留白恢复正常 */
+.content { flex: 1; min-width: 0; padding: 26px var(--content-pad) 40px; }
 
 .toolbar {
   position: sticky; top: 0; z-index: 10;
@@ -204,10 +204,11 @@ body {
 .radar-labels b { color: #14180f; font-weight: 700; margin-left: 3px; }
 .foot { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 7px; color: var(--ink-3); font-size: 11.5px; }
 
-/* ---- 底部分页器（浮动胶囊） ---- */
+/* ---- 底部分页器（纸张窗口内悬浮：滚动时跟随，但不超出纸的边界） ---- */
 .pager {
-  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
-  z-index: 30; display: flex; align-items: center; gap: 3px;
+  position: sticky; bottom: 18px; z-index: 30;
+  width: fit-content; margin: 26px auto 0;
+  display: flex; align-items: center; gap: 3px;
   padding: 6px 10px; border-radius: 999px;
   background: rgba(253, 252, 248, .97);
   border: 1px solid rgba(47, 122, 61, .16);
