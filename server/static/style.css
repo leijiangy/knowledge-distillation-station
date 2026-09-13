@@ -131,9 +131,14 @@ body {
 .content { flex: 1; min-width: 0; padding: 26px 30px 40px; }
 
 .toolbar {
+  position: sticky; top: 0; z-index: 10;
   padding-bottom: 10px;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   border-bottom: 2px solid var(--ink);
+  /* 滚动时表头悬浮：纸色毛玻璃底，内容从下方滚过被遮挡 */
+  background: rgba(253, 252, 248, .88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .toolbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .toolbar h2 { font-size: 18px; white-space: nowrap; }
