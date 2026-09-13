@@ -288,6 +288,18 @@ async def article_meta(request: Request):
 # ---- 书签小工具：全文接收与存储（T9：CloudBase PostgreSQL，经 REST API 访问） ----
 DISTILL_MAX_CHARS = 200_000
 
+# URL 归一化：收藏列表给回答是短格式 /answer/<id>，知乎页面地址是长格式
+# /question/<qid>/answer/<id> —— 统一成短格式，保证卡片匹配与去重一致
+_ANSWER_URL_RE = re.compile(r"^https?://(?:www\.)?zhihu\.com/question/\d+/answer/(\d+)")
+
+
+def _norm_key(url: str) -> str:
+    s = str(url or "").split("?")[0].split("#")[0]
+    match = _ANSWER_URL_RE.match(s)
+    if match:
+        return f"https://www.zhihu.com/answer/{match.group(1)}"
+    return s
+
 
 @app.on_event("startup")
 async def _startup():
@@ -320,7 +332,7 @@ async def ingest(request: Request):
             s = str(item or "").strip()
             if s.startswith("http") and len(s) <= 500 and s not in clean_images:
                 clean_images.append(s)
-    key = url.split("?")[0].split("#")[0]
+    key = _norm_key(url)
     await store.upsert(key, title, url, content, clean_images)
     return {"ok": True, "length": len(content), "images": len(clean_images),
             "total": await store.count()}
@@ -335,7 +347,7 @@ async def distilled_index():
 @app.get("/api/distilled/content")
 async def distilled_content(url: str):
     """读取某篇已蒸馏文章的全文"""
-    key = url.split("?")[0].split("#")[0]
+    key = _norm_key(url)
     item = await store.get(key)
     if not item:
         return {"ok": False, "error": {"code": "NOT_FOUND", "message": "这篇还没有全文，试试书签工具。"}}

@@ -138,6 +138,14 @@
     return String(url || "").replace(/_\d+w\.(jpe?g|png|webp|gif)$/i, suffix + ".$1");
   }
 
+  // URL 归一化：回答的长短格式统一（与后端 _norm_key 规则一致）
+  function normKey(url) {
+    const s = String(url || "").split("?")[0].split("#")[0];
+    const m = s.match(/^https?:\/\/(?:www\.)?zhihu\.com\/question\/\d+\/answer\/(\d+)/);
+    if (m) return "https://www.zhihu.com/answer/" + m[1];
+    return s;
+  }
+
   function formatDate(unixSeconds) {
     if (!unixSeconds) return "未知时间";
     const d = new Date(unixSeconds * 1000);
@@ -207,7 +215,7 @@
     const m = item.metrics || {};
     const author = item.Author && item.Author.Name ? item.Author.Name : "";
     const initial = author ? author.slice(0, 1) : "·";
-    const dKey = String(item.Url || "").split("?")[0].split("#")[0];
+    const dKey = normKey(item.Url);
     const dist = distilledMap[dKey];
     const distImgs = (dist && dist.images) || [];
     // 单图：摘要左侧小缩略图；多图：摘要下方一排（最多三张）
@@ -594,7 +602,7 @@
   let recommendLoaded = false;
 
   function recommendCardHtml(item) {
-    const key = String(item.Url || "").split("?")[0].split("#")[0];
+    const key = normKey(item.Url);
     const dist = distilledMap[key];
     const author = item.AuthorName || "";
     const initial = author ? author.slice(0, 1) : "·";
