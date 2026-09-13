@@ -266,20 +266,31 @@
           el.addEventListener("mousemove", (e) => {
             if (!dragging || !state.draft) return;
             const off = caretOffset(el, e.clientX, e.clientY);
-            if (off == null) return;
-            if (off !== state.draft.start) moved = true;
+            if (off == null || off === state.draft.end) return;
+            if (Math.abs(off - state.draft.start) <= 2 && !moved) {
+              state.draft.end = off;      // 微抖：只记位置，不重建 DOM（保证随后 click 能派发）
+              return;
+            }
+            moved = true;
             state.draft.end = off;
             renderActiveTab();
           });
           el.addEventListener("click", (e) => {
-            if (moved) { moved = false; return; }                      // 刚拖过：保留拖动结果
-            if (e.target.closest && e.target.closest(".mk")) return;   // 点在标记上：走标记自己的逻辑
+            if (moved) {
+              moved = false;
+              const d = state.draft;
+              if (d && Math.abs(d.end - d.start) > 2) return;          // 真实拖动：保留拖动结果
+            }
             const off = caretOffset(el, e.clientX, e.clientY);
             if (off == null) return;
             const tab = state.tabs[state.tabs.length - 1];
             if (!tab) return;
-            const text = scope === "explain" ? (tab.explain || "") : tab.text;
             const marks = scope === "explain" ? [] : (tab.marks || []);
+            // 通过字符位置判断：落在已有标记的区间内（含多行标记的行间空白）→ 打开该层
+            const hit = marks.find((m) => off >= m.start && off < m.end);
+            if (hit) { openExplainTab(hit.id); return; }
+            if (e.target.closest && e.target.closest(".mk")) return;   // 点在标记元素边缘
+            const text = scope === "explain" ? (tab.explain || "") : tab.text;
             const r = sentenceRangeAt(text, off);
             const free = freeRange(r, marks, off);
             state.draft = free ? { start: free.start, end: free.end, scope } : null;
@@ -293,6 +304,7 @@
           dragging = false;
           const d = state.draft;
           if (!d) return;
+          if (d.start === d.end) { state.draft = null; return; }   // 单击：不重建 DOM（保证 click 能派发）
           const tab = state.tabs[state.tabs.length - 1];
           const marks = d.scope === "explain" ? [] : ((tab && tab.marks) || []);
           const anchor = Math.min(d.start, d.end);
