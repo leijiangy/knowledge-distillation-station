@@ -9,7 +9,7 @@
     favGroup: $("fav-group"), favParent: $("fav-parent"), favSub: $("fav-sub"),
     navHome: $("nav-home"), navHistory: $("nav-history"),
     viewHome: $("view-home"), viewCollections: $("view-collections"),
-    homeLoginBtn: $("home-login-btn"), homeGotoCollections: $("home-goto-collections"),
+    homeGotoCollections: $("home-goto-collections"),
     homeBookmarklet: $("home-bookmarklet"), homeBookmarkletCode: $("home-bookmarklet-code"),
     homeCopyBookmarklet: $("home-copy-bookmarklet"), homeCopyBookmark: $("home-copy-bookmark"),
     copyBookmarkHint: $("copy-bookmark-hint"),
@@ -515,12 +515,6 @@
   function showHome() {
     showView("home");
     hideStates();
-    els.cards.innerHTML = "";
-    if (els.homeLoginBtn) {
-      const canLogin = Boolean(status && status.callback_configured);
-      els.homeLoginBtn.disabled = !canLogin;
-      els.homeLoginBtn.textContent = canLogin ? "连接我的知乎收藏夹" : "本地预览 · 部署后可登录";
-    }
     if (els.homeGotoCollections) {
       els.homeGotoCollections.hidden = !(status && (status.authorized || status.self_mode));
     }
@@ -544,6 +538,8 @@
       return;
     }
     if (!canRead) {
+      // 默认授权：能走 OAuth 就直接发起（用户进入即授权，无需点按钮）；本地预览模式停在首页
+      if (status.callback_configured) { location.href = "/api/oauth/start"; return; }
       showHome();
       return;
     }
@@ -575,12 +571,9 @@
   els.navHistory.addEventListener("click", (event) => event.preventDefault());
 
   // 首页 / 收藏视图切换
-  els.navHome.addEventListener("click", () => showView("home"));
+  els.navHome.addEventListener("click", () => showHome());
   if (els.homeGotoCollections) {
     els.homeGotoCollections.addEventListener("click", () => showView("collections"));
-  }
-  if (els.homeLoginBtn) {
-    els.homeLoginBtn.addEventListener("click", () => { location.href = "/api/oauth/start"; });
   }
 
   // 蒸馏书签：初始化 / 复制书签（富文本，可粘贴成书签）/ 复制代码

@@ -61,26 +61,26 @@
 
     <!-- 内容区 -->
     <main class="content">
-      <!-- 视图一：首页（产品介绍 + 蒸馏书签教程） -->
+      <!-- 视图一：首页（大标题 + 使用教程） -->
       <section class="view" id="view-home" hidden>
         <div class="home-hero">
-          <h1>你的收藏夹，<br>不该只是收藏。</h1>
-          <p>连接你的知乎收藏夹，逐条呈现认可度、信息量、准确性——找出真正值得学的那一篇。</p>
+          <h1>今天学点什么？</h1>
           <div class="home-actions">
-            <button class="btn-primary" id="home-login-btn">连接我的知乎收藏夹</button>
             <button class="btn-ghost" id="home-goto-collections" hidden>浏览我的收藏 →</button>
           </div>
         </div>
 
         <div class="home-bookmark">
-          <h3>🔖 蒸馏书签 —— 把知乎文章全文送进来</h3>
-          <p class="home-bookmark-sub">收藏列表给的是摘要。想要某篇文章的<b>全文</b>做深度学习？用这个书签：</p>
+          <h3>📖 使用教程</h3>
           <div class="tsteps">
             <div class="tstep">
-              <b>① 把它装进书签栏</b><span class="hint">一次性操作，5 秒</span>
+              <b>① 挑一篇</b><span class="hint">在「我的收藏」里看每篇的三指标（认可度 / 信息量 / 准确性）雷达图与分数，挑出今天想学的那篇</span>
+            </div>
+            <div class="tstep">
+              <b>② 取全文</b><span class="hint">点卡片上的「🧪 去蒸馏全文」，到打开的知乎页面点一下书签栏的「🧪 蒸馏这篇文章」。首次使用需先把它装进书签栏 ↓</span>
               <div class="bookmarklet-wrap">
                 <a class="bookmarklet" id="home-bookmarklet" href="javascript:void(0)" draggable="true">🧪 蒸馏这篇文章</a>
-                <span class="hint-inline">← 直接拖进书签栏（推荐）</span>
+                <span class="hint-inline">← 直接拖进书签栏（一次性，5 秒）</span>
               </div>
               <div class="copy-row">
                 或者
@@ -89,10 +89,7 @@
               </div>
             </div>
             <div class="tstep">
-              <b>② 在知乎文章页点它</b><span class="hint">弹窗确认「蒸馏这篇文章？」→ 确定</span>
-            </div>
-            <div class="tstep">
-              <b>③ 回来看结果</b><span class="hint">列表里亮起「✓ 已蒸馏」，点击即可读全文</span>
+              <b>③ 回来看结果</b><span class="hint">全文送达后知乎标签自动关闭；卡片亮起「✓ 已蒸馏」，点击即可读全文</span>
             </div>
           </div>
           <details class="manual">
