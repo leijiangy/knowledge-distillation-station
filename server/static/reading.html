@@ -403,6 +403,8 @@
       function openExplainTab(nodeId) {
         const node = findNode(nodeId);
         if (!node) return;
+        const existing = state.tabs.findIndex((t) => t.nodeId === nodeId);
+        if (existing >= 0) { trimTabsTo(existing); return; }   // 已在层栈中：直接回到那一层
         const parentTab = state.tabs[state.tabs.length - 1];
         const children = childMarks(node);
         state.tabs.push({
