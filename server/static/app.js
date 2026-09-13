@@ -211,7 +211,7 @@
     const galleryImgs = distImgs.slice(0, 3);
     const galleryHtml = galleryImgs.length >= 2
       ? `<div class="card-gallery n${galleryImgs.length}">${galleryImgs.map((u) =>
-          `<img src="${escapeHtml(thumbCover(u, "big"))}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join("")}</div>`
+          `<img src="${escapeHtml(thumbCover(u))}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join("")}</div>`
       : "";
     const badgeHtml = dist
       ? `<button class="distill-badge" data-distill="${escapeHtml(dKey)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`
