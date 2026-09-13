@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方向四 · 作业本</title>
+<style>
+  /* 方向四 · 真的作业本
+     关键转变：不做"全屏底纹"，做"一张纸"。
+     - 桌面：淡绿灰，居中放一张纸（有阴影、有边界）
+     - 纸：暖白，顶部真实作业本的页眉（姓名/班级/日期）
+     - 横线：印刷感的实色淡暗红线（不透明、等距、只在纸的内页区域）
+     - 分数：红笔批改（暗红楷体）
+     色板：桌面 #e9eee4 · 纸 #fdfcf8 · 横线实色 · 墨绿 #22301f · 批改红 #8f3a2e */
+  :root {
+    --paper: #fdfcf8;
+    --ink: #22301f;
+    --ink-2: #5c6b57;
+    --ink-3: #7a8776;        /* 对比度提升：小字达到 WCAG AA */
+    --gold: #b78628;
+    --green: #2f7a3d;
+    --teal: #337a6e;
+    --line: #e6dfd6;
+    --noise: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    color: var(--ink); line-height: 1.7;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    /* 桌面：护眼淡绿 + 柔和光晕 + 细点阵（纯 CSS，无外链素材） */
+    background-color: #edf3e7;
+    background-image:
+      radial-gradient(900px 420px at 12% -10%, rgba(47, 122, 61, .12), transparent 62%),
+      radial-gradient(700px 420px at 88% 110%, rgba(47, 122, 61, .09), transparent 60%),
+      radial-gradient(circle, rgba(47, 122, 61, .10) 1.1px, transparent 1.1px);
+    background-size: auto, auto, 24px 24px;
+    background-attachment: fixed;
+    display: flex; justify-content: center;
+    padding: 40px 20px 80px; min-height: 100vh;
+  }
+  .kai { font-family: "Kaiti SC", "STKaiti", "KaiTi", "楷体", serif; }
+  .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+
+  /* 纸：白色纸张浮在淡绿桌面上（纸张保持不变） */
+  .page {
+    width: 100%; max-width: 1080px; min-height: 84vh;
+    background-color: var(--paper); background-image: var(--noise);
+    border-radius: 3px;
+    box-shadow: 0 1px 2px rgba(30, 40, 28, .07), 0 18px 44px -18px rgba(30, 40, 28, .3);
+    display: flex;
+  }
+
+  /* 侧边栏：可收回（logo 顶 / 导航中 / 用户信息底） */
+  .sidebar {
+    flex: 0 0 auto; width: 208px; overflow: hidden;
+    border-right: 1px solid var(--line);
+    background: rgba(250, 249, 244, .6);
+    transition: width .22s ease, border-color .22s ease;
+  }
+  .sidebar-inner {
+    width: 208px; height: 100%; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 20px;
+    padding: 26px 16px 20px;
+  }
+  .page.sidebar-collapsed .sidebar { width: 0; border-right-color: transparent; }
+  .brand-row { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; letter-spacing: .3px; padding-left: 4px; }
+  .brand-mark {
+    width: 28px; height: 28px; border-radius: 8px; background: var(--green);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand-mark svg { display: block; }
+
+  .nav-list { display: flex; flex-direction: column; gap: 3px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+    border-radius: 6px; font-size: 13.5px; color: var(--ink-2); text-decoration: none;
+  }
+  .nav-item.active { background: rgba(47, 122, 61, .10); color: var(--green); font-weight: 700; }
+  .nav-item svg { display: block; opacity: .9; }
+
+  /* 一级导航（可展开的父项） */
+  .nav-parent {
+    width: 100%; border: 0; background: none; font: inherit; text-align: left;
+    cursor: pointer; justify-content: space-between; color: var(--ink);
+  }
+  .nav-parent .left { display: flex; align-items: center; gap: 9px; }
+  .nav-parent .chevron { transition: transform .18s ease; color: var(--ink-3); }
+  .nav-group.open .nav-parent .chevron { transform: rotate(180deg); }
+  /* 当前所在的一级模块 */
+  .nav-parent.current { background: rgba(47, 122, 61, .10); color: var(--green); font-weight: 700; }
+  .nav-parent.current .chevron { color: var(--green); }
+
+  /* 二级导航：收藏夹列表 */
+  .nav-sub {
+    display: none; flex-direction: column; gap: 1px;
+    margin: 2px 0 6px 14px; padding-left: 10px;
+    border-left: 1px solid var(--line);
+  }
+  .nav-group.open .nav-sub { display: flex; }
+  .nav-subitem {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    padding: 6px 9px; border-radius: 6px; font-size: 12.5px;
+    color: var(--ink-2); text-decoration: none;
+  }
+  .nav-subitem:hover { background: rgba(47, 122, 61, .06); }
+  .nav-subitem.active { background: rgba(47, 122, 61, .10); color: var(--green); font-weight: 700; }
+  .sub-count { font-size: 11px; color: var(--ink-3); font-weight: 400; }
+  .nav-subitem.active .sub-count { color: var(--green); }
+
+  .user-block {
+    margin-top: auto; display: flex; align-items: center; gap: 9px;
+    padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: rgba(255, 255, 252, .7);
+  }
+  .nav-avatar {
+    width: 30px; height: 30px; border-radius: 50%; background: #dce8d5; color: var(--green);
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+    flex: 0 0 30px;
+  }
+  .user-meta { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+  .user-meta b { font-size: 13px; font-weight: 700; }
+  .user-meta small { font-size: 11px; color: var(--ink-3); }
+
+  /* 内容区 */
+  .content { flex: 1; min-width: 0; padding: 26px 32px 40px; }
+
+  /* 内容区工具条 */
+  .toolbar {
+    padding-bottom: 10px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 2px solid var(--ink);
+  }
+  .toolbar-left { display: flex; align-items: center; gap: 12px; }
+  .sidebar-toggle {
+    width: 28px; height: 28px; padding: 0; border-radius: 7px;
+    border: 1px solid var(--line); background: rgba(255, 255, 252, .7);
+    color: var(--ink-2); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 28px;
+  }
+  .sidebar-toggle:hover { color: var(--green); border-color: #c6d2bf; }
+  /* 侧边栏内的收起按钮：靠右 */
+  .brand-row .sidebar-toggle { margin-left: auto; width: 26px; height: 26px; flex: 0 0 26px; }
+  /* 内容区的展开按钮：仅当侧边栏收起时出现 */
+  .toolbar .sidebar-toggle { display: none; }
+  .page.sidebar-collapsed .toolbar .sidebar-toggle { display: inline-flex; }
+  .toolbar h2 { font-size: 18px; }
+  .count { color: var(--green); font-size: 12.5px; margin-left: 8px; }
+  .sort { color: var(--ink-2); font-size: 12.5px; border: 1px solid var(--line); padding: 3px 10px; border-radius: 6px; background: rgba(255,255,255,.8); }
+
+  /* 自适应列数：卡片保持最小舒适宽度，放不下自动减列（不硬撑两列）；
+     min(430px, 100%) 保证窄容器下不溢出 */
+  .cards { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(430px, 100%), 1fr)); gap: 18px; }
+  /* 卡片：纸上的印刷框线（细边框、无阴影、极小圆角） */
+  .card {
+    background: rgba(255, 255, 253, .75);
+    border: 1px solid #ccd6c6; border-radius: 4px;
+    padding: 16px 18px 12px; position: relative;
+  }
+  .card-title { font-size: 16px; font-weight: 600; line-height: 1.55; }
+  .meta { color: var(--ink-3); font-size: 12px; margin: 7px 0 9px; display: flex; gap: 10px; }
+  .tag { border: 1px solid var(--line); color: var(--green); padding: 0 8px; border-radius: 5px; background: rgba(47,122,61,.06); }
+  /* 左：长摘要；右：雷达图 + 下方竖排分数小字 */
+  .card-main { display: flex; gap: 13px; align-items: center; }
+  .summary { flex: 1; min-width: 0; color: var(--ink-2); font-size: 13px;
+    display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+  .card-radar { flex: 0 0 98px; display: flex; flex-direction: column; align-items: center; gap: 7px; }
+  .radar { width: 86px; }
+  .radar-labels { display: flex; flex-direction: column; gap: 1px; font-size: 11px; color: var(--ink-3); }
+  .radar-labels b { color: #14180f; font-weight: 700; margin-left: 3px; }
+  .foot { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 7px; color: var(--ink-3); font-size: 11.5px; }
+</style>
+</head>
+<body>
+  <div class="page" id="page">
+    <aside class="sidebar">
+      <div class="sidebar-inner">
+        <div class="brand-row">
+          <span class="brand-mark"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><polygon points="12,4.5 19.5,16.5 4.5,16.5" fill="none" stroke="#f6fbf3" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="4.5" r="1.9" fill="#f6fbf3"/><circle cx="19.5" cy="16.5" r="1.9" fill="#f6fbf3"/><circle cx="4.5" cy="16.5" r="1.9" fill="#f6fbf3"/></svg></span>
+          知识蒸馏站
+          <button class="sidebar-toggle" id="sidebar-toggle" title="收起侧边栏" aria-label="收起侧边栏">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="13,6 7,12 13,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <nav class="nav-list">
+          <a class="nav-item" href="#">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 11 L12 4.5 L20 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10.5 V19.5 H18 V10.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            首页
+          </a>
+          <div class="nav-group open" id="fav-group">
+            <button class="nav-item nav-parent current" id="fav-parent">
+              <span class="left">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><polygon points="12,5 19,16 5,16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+                我的收藏
+              </span>
+              <svg class="chevron" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="7,10 12,15 17,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="nav-sub">
+              <a class="nav-subitem active" href="#">我的收藏 <span class="sub-count">49</span></a>
+              <a class="nav-subitem" href="#">学习资料 <span class="sub-count">23</span></a>
+              <a class="nav-subitem" href="#">稍后读 <span class="sub-count">8</span></a>
+            </div>
+          </div>
+          <a class="nav-item" href="#">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="12,7.5 12,12 15,13.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            学习记录
+          </a>
+        </nav>
+        <div class="user-block">
+          <span class="nav-avatar">知</span>
+          <div class="user-meta"><b>知乎用户</b><small>已连接知乎账号</small></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="sidebar-toggle" id="sidebar-expand" title="展开侧边栏" aria-label="展开侧边栏">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="11,6 17,12 11,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>我的收藏 <span class="count">49 条</span></h2>
+        </div>
+        <div class="sort">排序：收藏时间（新→旧）</div>
+      </div>
+      <div class="cards" id="cards"></div>
+    </main>
+  </div>
+
+<script>
+const items = [
+  { type: "文章", author: "某研究者", time: "11 天前收藏",
+    title: "从贝叶斯视角理解反向传播：为什么深度学习需要概率论",
+    summary: "很多人把反向传播当作纯粹的链式法则练习，但如果从贝叶斯的角度看，整个训练过程其实是在做后验推断——每个样本都在悄悄修正你对参数分布的信念。这篇文章从先验、似然到后验的完整链条讲起，把梯度下降重新解释为信念更新的过程，并给出了三个具体例子，说明什么时候这种视角能带来新的工程直觉。",
+    s: { approval: 78, richness: 81, credibility: 55 }, combined: 74 },
+  { type: "回答", author: "费曼手记", time: "16 天前收藏",
+    title: "费曼学习法的真正难点：如何暴露自己的知识盲区",
+    summary: "讲给别人听只是形式，真正难的是找到自己「以为懂了」的地方。这篇文章给了一个可操作的自检流程：先用自己的话写下解释，逐句追问「这句话为什么成立」，把答不上来的地方圈出来，再从最基础的定义重新推导一遍。作者强调，暴露盲区时的挫败感不是失败，而是学习真正开始的地方。",
+    s: { approval: 39, richness: 83, credibility: 65 }, combined: 58 },
+];
+const COLORS = { approval: "#b78628", richness: "#2f7a3d", credibility: "#337a6e" };
+const NAMES = { approval: "认可度", richness: "信息量", credibility: "准确性" };
+
+function radar(s) {
+  const W = 92, H = 84, cx = 46, cy = 50, R = 39;
+  const rad = d => d * Math.PI / 180;
+  const pt = (a, r) => [cx + r * Math.cos(rad(a)), cy + r * Math.sin(rad(a))];
+  const axes = [[s.approval, -90], [s.richness, 30], [s.credibility, 150]];
+  let g = "";
+  for (const lv of [1/3, 2/3, 1]) {
+    g += `<polygon points="${axes.map(([,a]) => pt(a, R*lv).map(v=>v.toFixed(1)).join(",")).join(" ")}" fill="none" stroke="#e8e0d8" stroke-width="1"/>`;
+  }
+  const spokes = axes.map(([,a]) => { const [x,y]=pt(a,R); return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#e8e0d8"/>`; }).join("");
+  const data = axes.map(([v,a]) => pt(a, R*Math.min(100,v)/100).map(x=>x.toFixed(1)).join(",")).join(" ");
+  const dots = axes.map(([v,a]) => { const [x,y]=pt(a,R*Math.min(100,v)/100); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#2f7a3d" stroke="#fff" stroke-width="1.4"/>`; }).join("");
+  return `<svg class="radar" viewBox="0 0 ${W} ${H}">${g}${spokes}
+    <polygon points="${data}" fill="rgba(47,122,61,.13)" stroke="#2f7a3d" stroke-width="1.8" stroke-linejoin="round"/>${dots}</svg>`;
+}
+
+document.getElementById("cards").innerHTML = items.map(it => `
+  <article class="card">
+    <div class="card-title">${it.title}</div>
+    <div class="meta"><span class="tag">${it.type}</span><span>${it.author}</span><span>${it.time}</span></div>
+    <div class="card-main">
+      <p class="summary">${it.summary}</p>
+      <div class="card-radar">
+        ${radar(it.s)}
+        <div class="radar-labels">
+          ${Object.entries(it.s).map(([k,v]) => `<span>${NAMES[k]}<b class="mono">${v}</b></span>`).join("")}
+        </div>
+      </div>
+    </div>
+    <div class="foot">依据：收藏 463 · 赞同 283 · 评论 21</div>
+  </article>`).join("");
+
+// 侧边栏收起/展开（侧边栏内按钮收起，内容区按钮展开）
+const pageEl = document.getElementById("page");
+document.getElementById("sidebar-toggle").addEventListener("click", () => {
+  pageEl.classList.add("sidebar-collapsed");
+});
+document.getElementById("sidebar-expand").addEventListener("click", () => {
+  pageEl.classList.remove("sidebar-collapsed");
+});
+
+// 一级导航展开/收起（收藏夹列表）
+document.getElementById("fav-parent").addEventListener("click", () => {
+  document.getElementById("fav-group").classList.toggle("open");
+});
+</script>
+</body>
+</html>

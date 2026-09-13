@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>背景素材方案对比</title>
+<style>
+  /* 三个背景素材方案对比（同一张卡片，铺在不同背景上） */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f2f2f2; padding: 28px; color: #22301f; }
+  h1 { font-size: 18px; margin-bottom: 18px; }
+  .demo { border-radius: 12px; padding: 26px; margin-bottom: 22px; position: relative; overflow: hidden; }
+  .demo h3 { font-size: 13px; margin-bottom: 14px; color: #4a5a45; letter-spacing: .5px; }
+  .demo h3 b { color: #2f7a3d; }
+
+  /* 方案 1：柔和光晕 + 细点阵 */
+  .bg1 {
+    background-color: #edf3e7;
+    background-image:
+      radial-gradient(900px 420px at 12% -10%, rgba(47,122,61,.12), transparent 62%),
+      radial-gradient(700px 420px at 88% 110%, rgba(47,122,61,.09), transparent 60%),
+      radial-gradient(circle, rgba(47,122,61,.10) 1.1px, transparent 1.1px);
+    background-size: auto, auto, 24px 24px;
+  }
+
+  /* 方案 2：斜向细纹（布纹/纸纤维感） */
+  .bg2 {
+    background-color: #edf3e7;
+    background-image:
+      radial-gradient(800px 400px at 50% -10%, rgba(255,255,255,.55), transparent 70%),
+      repeating-linear-gradient(45deg, rgba(47,122,61,.055) 0 1px, transparent 1px 14px),
+      repeating-linear-gradient(-45deg, rgba(47,122,61,.045) 0 1px, transparent 1px 14px);
+  }
+
+  /* 方案 3：极淡方格 + 顶部光晕（现代稿纸） */
+  .bg3 {
+    background-color: #eef4e8;
+    background-image:
+      radial-gradient(1000px 460px at 50% -12%, rgba(255,255,255,.6), transparent 70%),
+      linear-gradient(rgba(47,122,61,.075) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(47,122,61,.075) 1px, transparent 1px);
+    background-size: auto, 30px 30px, 30px 30px;
+  }
+
+  /* 示例卡片（模拟真实卡片在背景上的效果） */
+  .card {
+    background: rgba(255,255,253,.92); border: 1px solid #d7e0d0; border-radius: 4px;
+    padding: 16px 18px; max-width: 620px;
+  }
+  .card-title { font-size: 15px; font-weight: 600; }
+  .card-meta { font-size: 12px; color: #7a8776; margin: 6px 0 8px; }
+  .card-summary { font-size: 12.5px; color: #5c6b57; line-height: 1.7; }
+</style>
+</head>
+<body>
+  <h1>背景素材方案对比（同一张卡片，三种背景）</h1>
+
+  <section class="demo bg1">
+    <h3>方案 ① · <b>柔和光晕 + 细点阵</b>——大面积的深浅绿呼吸感，点缀细腻点阵</h3>
+    <div class="card">
+      <div class="card-title">从贝叶斯视角理解反向传播：为什么深度学习需要概率论</div>
+      <div class="card-meta">文章 · 某研究者 · 11 天前收藏</div>
+      <div class="card-summary">很多人把反向传播当作纯粹的链式法则练习，但如果从贝叶斯的角度看，整个训练过程其实是在做后验推断——每个样本都在悄悄修正你对参数分布的信念。</div>
+    </div>
+  </section>
+
+  <section class="demo bg2">
+    <h3>方案 ② · <b>斜向细纹</b>——布纹/纸纤维质感，两个方向的极淡斜线交织</h3>
+    <div class="card">
+      <div class="card-title">从贝叶斯视角理解反向传播：为什么深度学习需要概率论</div>
+      <div class="card-meta">文章 · 某研究者 · 11 天前收藏</div>
+      <div class="card-summary">很多人把反向传播当作纯粹的链式法则练习，但如果从贝叶斯的角度看，整个训练过程其实是在做后验推断——每个样本都在悄悄修正你对参数分布的信念。</div>
+    </div>
+  </section>
+
+  <section class="demo bg3">
+    <h3>方案 ③ · <b>极淡方格 + 顶部光晕</b>——现代稿纸感，30px 方格若隐若现</h3>
+    <div class="card">
+      <div class="card-title">从贝叶斯视角理解反向传播：为什么深度学习需要概率论</div>
+      <div class="card-meta">文章 · 某研究者 · 11 天前收藏</div>
+      <div class="card-summary">很多人把反向传播当作纯粹的链式法则练习，但如果从贝叶斯的角度看，整个训练过程其实是在做后验推断——每个样本都在悄悄修正你对参数分布的信念。</div>
+    </div>
+  </section>
+</body>
+</html>

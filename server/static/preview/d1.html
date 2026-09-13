@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方向一 · 朱批本</title>
+<style>
+  /* 方向一 · 朱批本
+     题材依据：收藏是藏书，学习是批注，三指标即先生朱批。
+     色板：宣纸 #f7f3ea · 墨 #211d18 · 朱砂 #b03a2e · 靛 #2f4a7a · 石绿 #4a7c59
+     字体：标题楷体（批注气），数字宋体/衬线，正文系统无衬线
+     记忆点：右下角的朱砂「印」——每张卡片盖一枚 */
+  :root {
+    --paper: #f7f3ea;
+    --card: #fdfbf6;
+    --ink: #211d18;
+    --ink-2: #6b6257;
+    --ink-3: #a3968a;
+    --line: #e3dbcc;
+    --cinnabar: #b03a2e;
+    --indigo: #2f4a7a;
+    --jade: #4a7c59;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--paper); color: var(--ink); line-height: 1.7; padding-bottom: 64px;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .kai { font-family: "Kaiti SC", "STKaiti", "KaiTi", "楷体", serif; }
+  .seal-font { font-family: "Songti SC", "SimSun", "宋体", serif; }
+
+  .topbar { max-width: 1060px; margin: 0 auto; padding: 22px 20px 4px; display: flex; align-items: center; gap: 12px; }
+  .seal-logo {
+    width: 40px; height: 40px; background: var(--cinnabar); color: #fdfbf6;
+    display: flex; align-items: center; justify-content: center; border-radius: 5px;
+    font-size: 15px; letter-spacing: 1px; line-height: 1.15; text-align: center; font-weight: 700;
+    box-shadow: inset 0 0 0 2px rgba(253,251,246,.35);
+  }
+  .brand-name { font-size: 17px; font-weight: 700; letter-spacing: 2px; }
+
+  .hero { max-width: 1060px; margin: 0 auto; padding: 30px 20px 6px; position: relative; }
+  .hero h1 { font-size: 38px; font-weight: 700; letter-spacing: 3px; line-height: 1.5; }
+  .hero p { color: var(--ink-2); margin-top: 12px; max-width: 540px; font-size: 15px; }
+  .hero .margin-note {
+    position: absolute; right: 34px; top: 40px; color: var(--cinnabar);
+    writing-mode: vertical-rl; font-size: 13px; letter-spacing: 4px; opacity: .85;
+  }
+
+  .toolbar {
+    max-width: 1060px; margin: 20px auto 0; padding: 0 20px 12px;
+    display: flex; align-items: flex-end; justify-content: space-between;
+    border-bottom: 2px solid var(--ink);
+  }
+  .toolbar h2 { font-size: 19px; letter-spacing: 2px; }
+  .count { color: var(--cinnabar); font-size: 13px; margin-left: 8px; letter-spacing: 1px; }
+  .sort { color: var(--ink-2); font-size: 13px; border: 1px solid var(--line); padding: 4px 10px; border-radius: 4px; background: var(--card); }
+
+  .cards { max-width: 1060px; margin: 22px auto 0; padding: 0 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+    padding: 20px 22px 16px; position: relative;
+    box-shadow: 0 1px 0 rgba(33,29,24,.04), 0 10px 24px -18px rgba(33,29,24,.35);
+  }
+  .card-title { font-size: 18px; font-weight: 700; line-height: 1.6; letter-spacing: .5px; }
+  .meta { color: var(--ink-3); font-size: 12.5px; margin: 8px 0 10px; display: flex; gap: 10px; }
+  .tag { border: 1px solid var(--line); color: var(--cinnabar); padding: 0 8px; border-radius: 3px; }
+  .summary { color: var(--ink-2); font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .main { display: flex; gap: 18px; align-items: center; margin-top: 14px; }
+  .legend { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .legend .row { display: flex; align-items: baseline; gap: 8px; }
+  .legend .score { margin-left: auto; color: var(--cinnabar); font-size: 15px; font-weight: 700; }
+  .legend .mark { width: 10px; height: 10px; transform: rotate(45deg); display: inline-block; }
+  .radar { width: 96px; flex: 0 0 96px; }
+
+  /* 朱砂印：卡片记忆点 */
+  .stamp {
+    position: absolute; right: 16px; bottom: 14px; width: 46px; height: 46px;
+    border: 2.5px solid var(--cinnabar); border-radius: 6px; color: var(--cinnabar);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; line-height: 1.1; transform: rotate(-4deg);
+    background: rgba(176,58,46,.05); letter-spacing: 1px;
+  }
+  .stamp small { font-size: 8.5px; letter-spacing: 2px; font-weight: 400; }
+  .stamp-note { color: var(--ink-3); font-size: 11.5px; margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 8px; padding-right: 60px; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="seal-logo seal-font">蒸馏</div>
+    <div class="brand-name">知识蒸馏站</div>
+  </div>
+  <div class="hero">
+    <h1 class="kai">你的收藏夹，<br>不该只是收藏。</h1>
+    <p>连接你的知乎收藏夹，逐条呈现认可度、信息量、准确性——如朱笔批卷，帮你找出真正值得学的那一篇。</p>
+    <div class="margin-note kai">四十九篇 待沽</div>
+  </div>
+  <div class="toolbar">
+    <div><h2 class="kai">我的收藏 <span class="count">49 条</span></h2></div>
+    <div class="sort">排序：收藏时间（新→旧）</div>
+  </div>
+  <div class="cards" id="cards"></div>
+
+<script>
+const items = [
+  { type: "文章", author: "某研究者", time: "11 天前收藏",
+    title: "从贝叶斯视角理解反向传播：为什么深度学习需要概率论",
+    summary: "很多人把反向传播当作纯粹的链式法则练习，但如果从贝叶斯的角度看，整个训练过程其实是在做后验推断……",
+    s: { approval: 78, richness: 81, credibility: 55 }, combined: 74 },
+  { type: "回答", author: "费曼手记", time: "16 天前收藏",
+    title: "费曼学习法的真正难点：如何暴露自己的知识盲区",
+    summary: "讲给别人听只是形式，真正难的是找到自己「以为懂了」的地方。这篇文章给了一个可操作的自检流程……",
+    s: { approval: 39, richness: 83, credibility: 65 }, combined: 58 },
+];
+const COLORS = { approval: "#b03a2e", richness: "#2f4a7a", credibility: "#4a7c59" };
+const NAMES = { approval: "认可度", richness: "信息量", credibility: "准确性" };
+
+function radar(s) {
+  const W = 96, H = 88, cx = 48, cy = 52, R = 41;
+  const rad = d => d * Math.PI / 180;
+  const pt = (a, r) => [cx + r * Math.cos(rad(a)), cy + r * Math.sin(rad(a))];
+  const axes = [[s.approval, -90], [s.richness, 30], [s.credibility, 150]];
+  let g = "";
+  for (const lv of [1/3, 2/3, 1]) {
+    g += `<polygon points="${axes.map(([,a]) => pt(a, R*lv).map(v=>v.toFixed(1)).join(",")).join(" ")}" fill="none" stroke="#e3dbcc" stroke-width="1"/>`;
+  }
+  const spokes = axes.map(([,a]) => { const [x,y]=pt(a,R); return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#e3dbcc"/>`; }).join("");
+  const data = axes.map(([v,a]) => pt(a, R*Math.min(100,v)/100).map(x=>x.toFixed(1)).join(",")).join(" ");
+  const dots = axes.map(([v,a]) => { const [x,y]=pt(a,R*Math.min(100,v)/100); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#b03a2e"/>`; }).join("");
+  return `<svg class="radar" viewBox="0 0 ${W} ${H}">${g}${spokes}
+    <polygon points="${data}" fill="rgba(176,58,46,.12)" stroke="#b03a2e" stroke-width="1.8" stroke-linejoin="round"/>${dots}</svg>`;
+}
+
+document.getElementById("cards").innerHTML = items.map(it => `
+  <article class="card">
+    <div class="card-title kai">${it.title}</div>
+    <div class="meta"><span class="tag">${it.type}</span><span>${it.author}</span><span>${it.time}</span></div>
+    <div class="summary">${it.summary}</div>
+    <div class="main">
+      <div class="legend">
+        ${Object.entries(it.s).map(([k,v]) => `
+          <div class="row"><span class="mark" style="background:${COLORS[k]}"></span>${NAMES[k]}
+            <span class="score seal-font">${v}</span></div>`).join("")}
+      </div>
+      ${radar(it.s)}
+    </div>
+    <div class="stamp seal-font">${it.combined}<small>学习值</small></div>
+    <div class="stamp-note">收藏 463 · 赞同 283 · 评论 21（悬停可查依据）</div>
+  </article>`).join("");
+</script>
+</body>
+</html>

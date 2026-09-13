@@ -7,61 +7,68 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark">🧪</span>
-      <span class="brand-name">知识蒸馏站</span>
-    </div>
-    <div class="user-area" id="user-area" hidden>
-      <img class="avatar" id="user-avatar" alt="" hidden>
-      <span class="username" id="user-name"></span>
-      <button class="btn-ghost" id="logout-btn">退出</button>
-    </div>
-  </header>
+  <div class="page" id="page">
+    <!-- 侧边栏：logo / 一级导航 + 收藏夹二级导航 / 用户信息 -->
+    <aside class="sidebar">
+      <div class="sidebar-inner">
+        <div class="brand-row">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="15" height="15"><polygon points="12,4.5 19.5,16.5 4.5,16.5" fill="none" stroke="#f6fbf3" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="4.5" r="1.9" fill="#f6fbf3"/><circle cx="19.5" cy="16.5" r="1.9" fill="#f6fbf3"/><circle cx="4.5" cy="16.5" r="1.9" fill="#f6fbf3"/></svg>
+          </span>
+          知识蒸馏站
+          <button class="sidebar-toggle" id="sidebar-toggle" title="收起侧边栏" aria-label="收起侧边栏">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="13,6 7,12 13,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
 
-  <main>
-    <!-- 未登录：产品介绍 -->
-    <section class="hero" id="hero">
-      <h1 class="hero-title">你的收藏夹，<br>不该只是收藏。</h1>
-      <p class="hero-sub">
-        连接你的知乎收藏夹，这里逐条呈现每篇内容的
-        <b>认可度</b>、<b>信息量</b>、<b>准确性</b>，
-        帮你找出真正值得花时间学的那一篇。
-      </p>
-      <div class="hero-actions">
-        <button class="btn-primary" id="login-btn">连接我的知乎收藏夹</button>
-        <p class="hint" id="login-hint" hidden></p>
-      </div>
-      <div class="feature-grid">
-        <div class="feature">
-          <span class="feature-icon">📊</span>
-          <h3>三指标量化</h3>
-          <p>社区认可、内容厚度、可靠程度，分开展示，不合成模糊总分</p>
-        </div>
-        <div class="feature">
-          <span class="feature-icon">🗂️</span>
-          <h3>全量读取</h3>
-          <p>分页取全整个收藏夹，不只是"最近几条"</p>
-        </div>
-        <div class="feature">
-          <span class="feature-icon">🔍</span>
-          <h3>依据透明</h3>
-          <p>每个分数都列出计算依据，看得见怎么来的</p>
-        </div>
-      </div>
-    </section>
+        <nav class="nav-list">
+          <a class="nav-item" href="#" id="nav-home">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 11 L12 4.5 L20 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10.5 V19.5 H18 V10.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            首页
+          </a>
 
-    <!-- 已登录：收藏工作区 -->
-    <section class="workspace" id="workspace" hidden>
+          <div class="nav-group open" id="fav-group">
+            <button class="nav-item nav-parent current" id="fav-parent">
+              <span class="left">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><polygon points="12,5 19,16 5,16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+                我的收藏
+              </span>
+              <svg class="chevron" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="7,10 12,15 17,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="nav-sub" id="fav-sub">
+              <!-- 收藏夹列表动态渲染 -->
+              <div class="nav-sub-loading" id="fav-sub-loading">加载中……</div>
+            </div>
+          </div>
+
+          <a class="nav-item" href="#" id="nav-history">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="12,7.5 12,12 15,13.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            学习记录
+          </a>
+        </nav>
+
+        <div class="user-block" id="user-block">
+          <span class="nav-avatar" id="user-avatar">·</span>
+          <div class="user-meta">
+            <b id="user-name">未登录</b>
+            <small id="user-sub">点击登录知乎账号</small>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 内容区 -->
+    <main class="content">
       <div class="toolbar">
-        <div class="toolbar-info">
-          <h2 id="favlist-title">我的收藏</h2>
-          <span class="count-badge" id="count-badge"></span>
+        <div class="toolbar-left">
+          <button class="sidebar-toggle" id="sidebar-expand" title="展开侧边栏" aria-label="展开侧边栏">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="11,6 17,12 11,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2 id="favlist-title">我的收藏 <span class="count" id="count-badge"></span></h2>
         </div>
-        <div class="toolbar-actions">
+        <div class="toolbar-right">
           <span class="loaded-badge" id="loaded-badge" hidden></span>
-          <label class="sort-label">排序</label>
-          <select id="sort-select" class="select">
+          <select id="sort-select" class="select" aria-label="排序方式">
             <option value="favtime">收藏时间（新→旧）</option>
             <option value="combined">综合分数（高→低）</option>
             <option value="approval">认可度（高→低）</option>
@@ -71,28 +78,29 @@
           <button class="btn-ghost" id="refresh-btn">刷新</button>
         </div>
       </div>
+
       <div class="cards" id="cards"></div>
-    </section>
 
-    <!-- 状态：加载 / 错误 / 空 -->
-    <section class="state-box" id="state-loading" hidden>
-      <div class="spinner"></div>
-      <p id="loading-text">正在读取你的收藏夹……</p>
-    </section>
-    <section class="state-box" id="state-error" hidden>
-      <span class="state-icon">⚠️</span>
-      <p id="error-text"></p>
-      <button class="btn-primary" id="retry-btn">重试</button>
-    </section>
-    <section class="state-box" id="state-empty" hidden>
-      <span class="state-icon">🗒️</span>
-      <p id="empty-text">这个收藏夹还是空的。</p>
-    </section>
-  </main>
-
-  <footer class="footer">
-    <p>知识蒸馏站 · 知乎黑客松 2026 校园新锐季 · 数据来自知乎开放平台</p>
-  </footer>
+      <div class="state-box" id="state-loading" hidden>
+        <div class="spinner"></div>
+        <p id="loading-text">正在读取收藏夹……</p>
+      </div>
+      <div class="state-box" id="state-error" hidden>
+        <span class="state-icon">⚠️</span>
+        <p id="error-text"></p>
+        <button class="btn-primary" id="retry-btn">重试</button>
+      </div>
+      <div class="state-box" id="state-empty" hidden>
+        <span class="state-icon">🗒️</span>
+        <p id="empty-text">这个收藏夹还是空的。</p>
+      </div>
+      <div class="state-box" id="state-login" hidden>
+        <span class="state-icon">🔗</span>
+        <p id="login-text">连接你的知乎收藏夹，开始蒸馏。</p>
+        <button class="btn-primary" id="login-btn">连接我的知乎收藏夹</button>
+      </div>
+    </main>
+  </div>
 
   <script src="/app.js"></script>
 </body>
