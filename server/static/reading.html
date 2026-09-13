@@ -646,13 +646,12 @@
         try {
           await api("/api/reading/node/" + nodeId + "?url=" + encodeURIComponent(state.url),
                     { method: "DELETE" });
-          state.segNodes = state.segNodes.filter((n) => n.id !== nodeId && n.parent_id !== nodeId);
-          const tab = state.tabs[state.tabs.length - 1];
-          if (tab.isRoot) { renderQa(state.segNodes); tab.marks = segMarks(state.segNodes); }
-          if (state.tabs.some((t) => t.nodeId === nodeId)) { trimTabsTo(0); }
-          else { renderActiveTab(); }
+          // 重新载入本段：标记、解释、层栈全部回到一致状态（下划线随之消失）
+          const data = await api("/api/reading/segment?url=" + encodeURIComponent(state.url)
+                                 + "&seg=" + state.seg.index);
+          renderSegment(data.segment);
         } catch (err) {
-          alert("删除失败：" + err.message);
+          $("rd-ask-error").textContent = "删除失败：" + err.message;
         }
       }
 
