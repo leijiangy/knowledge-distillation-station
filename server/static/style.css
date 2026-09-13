@@ -95,10 +95,7 @@ main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 20px 
   background: #eef2ff; color: var(--blue); font-size: 12px; font-weight: 600;
   padding: 2px 10px; border-radius: 999px;
 }
-.cache-badge {
-  background: #ecfdf5; color: var(--green); font-size: 12px;
-  padding: 2px 10px; border-radius: 999px;
-}
+.loaded-badge { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .toolbar-actions { display: flex; align-items: center; gap: 10px; }
 .sort-label { font-size: 13px; color: var(--ink-3); }
 .select {

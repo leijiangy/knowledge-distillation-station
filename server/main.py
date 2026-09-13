@@ -149,7 +149,7 @@ async def oauth_logout(request: Request):
 
 
 def _enrich_with_shared_metrics(items: list) -> list:
-    """为收藏条目附加三指标；指标按内容 URL 全站共享缓存（蒸馏成果沉淀）"""
+    """为收藏条目附加三指标与排序用综合分；指标按内容 URL 全站共享缓存"""
     enriched = []
     for item in items:
         key = "metrics:" + str(item.get("Url") or item.get("Title") or "")
@@ -159,6 +159,7 @@ def _enrich_with_shared_metrics(items: list) -> list:
             content_cache.set(key, metrics)
         row = dict(item)
         row["metrics"] = metrics
+        row["combined_score"] = analyze.combined_score(metrics)
         enriched.append(row)
     return enriched
 
@@ -214,6 +215,7 @@ async def collections(request: Request, favlist: str | None = None, force: int =
             "favlist": fav_meta,
             "count": len(raw_items),
             "items": _enrich_with_shared_metrics(raw_items),
+            "loaded_at": int(time.time()),  # 数据加载时刻（缓存命中时返回原加载时间）
         }
         user_cache.set(cache_key, payload)
         return {"ok": True, "cached": False, **payload}

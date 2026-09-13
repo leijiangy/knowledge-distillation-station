@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """三指标纯函数测试"""
-from core.analyze import analyze_items, approval, credibility, metrics_for, richness
+from core.analyze import analyze_items, approval, combined_score, credibility, metrics_for, richness
 
 SAMPLE = {
     "ContentType": "answer",
@@ -44,3 +44,13 @@ def test_analyze_items_keeps_original_fields():
     assert enriched[0]["Title"] == SAMPLE["Title"]
     assert set(enriched[0]["metrics"].keys()) == {"approval", "richness", "credibility"}
     assert "score" in metrics_for(SAMPLE)["approval"]
+
+
+def test_combined_score_weighted():
+    """综合分 = 0.4 认可 + 0.35 信息 + 0.25 准确（仅用于排序）"""
+    only_approval = {"approval": {"score": 100}, "richness": {"score": 0}, "credibility": {"score": 0}}
+    assert combined_score(only_approval) == 40.0
+    only_richness = {"approval": {"score": 0}, "richness": {"score": 100}, "credibility": {"score": 0}}
+    assert combined_score(only_richness) == 35.0
+    empty = {}
+    assert combined_score(empty) == 0.0

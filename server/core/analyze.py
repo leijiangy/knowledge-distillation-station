@@ -96,6 +96,19 @@ def metrics_for(item: dict) -> dict:
     }
 
 
+# 综合分权重（仅用于排序，不在卡片上展示；调整需在企划书变更记录登记）
+COMBINED_WEIGHTS = {"approval": 0.4, "richness": 0.35, "credibility": 0.25}
+
+
+def combined_score(metrics: dict) -> float:
+    """排序用综合分 = 三指标加权平均（0.4 / 0.35 / 0.25）"""
+    total = 0.0
+    for kind, weight in COMBINED_WEIGHTS.items():
+        metric = metrics.get(kind) or {}
+        total += float(metric.get("score") or 0) * weight
+    return round(total, 1)
+
+
 def analyze_items(items: list) -> list:
     """批量附加三指标；不改动原始字段"""
     result = []

@@ -8,7 +8,7 @@
     userArea: $("user-area"), userAvatar: $("user-avatar"), userName: $("user-name"),
     loginBtn: $("login-btn"), loginHint: $("login-hint"), logoutBtn: $("logout-btn"),
     sortSelect: $("sort-select"), refreshBtn: $("refresh-btn"),
-    favlistTitle: $("favlist-title"), countBadge: $("count-badge"), cacheBadge: $("cache-badge"),
+    favlistTitle: $("favlist-title"), countBadge: $("count-badge"), loadedBadge: $("loaded-badge"),
     stateLoading: $("state-loading"), loadingText: $("loading-text"),
     stateError: $("state-error"), errorText: $("error-text"), retryBtn: $("retry-btn"),
     stateEmpty: $("state-empty"), emptyText: $("empty-text"),
@@ -29,6 +29,14 @@
     if (days < 30) return `${days} 天前收藏 · ${dateText}`;
     if (days < 365) return `${Math.floor(days / 30)} 个月前收藏 · ${dateText}`;
     return `${Math.floor(days / 365)} 年前收藏 · ${dateText}`;
+  }
+
+  function formatClock(unixSeconds) {
+    const d = new Date(unixSeconds * 1000);
+    const now = new Date();
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    if (d.toDateString() === now.toDateString()) return `今天 ${hm}`;
+    return `${d.getMonth() + 1} 月 ${d.getDate()} 日 ${hm}`;
   }
 
   function showState(name) {
@@ -125,6 +133,7 @@
   function sortItems() {
     const by = {
       favtime: (a, b) => (b.FavTime || 0) - (a.FavTime || 0),
+      combined: (a, b) => (b.combined_score || 0) - (a.combined_score || 0),
       approval: (a, b) => (b.metrics?.approval?.score || 0) - (a.metrics?.approval?.score || 0),
       richness: (a, b) => (b.metrics?.richness?.score || 0) - (a.metrics?.richness?.score || 0),
       credibility: (a, b) => (b.metrics?.credibility?.score || 0) - (a.metrics?.credibility?.score || 0),
@@ -153,7 +162,12 @@
       allItems = data.items || [];
       els.favlistTitle.textContent = data.favlist?.Title || "我的收藏";
       els.countBadge.textContent = `${data.count} 条`;
-      els.cacheBadge.hidden = !data.cached;
+      if (data.loaded_at) {
+        els.loadedBadge.hidden = false;
+        els.loadedBadge.textContent = "上次加载 " + formatClock(data.loaded_at);
+      } else {
+        els.loadedBadge.hidden = true;
+      }
       if (allItems.length === 0) {
         els.workspace.hidden = false;
         showState("Empty");
