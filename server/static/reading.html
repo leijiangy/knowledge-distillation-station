@@ -128,7 +128,12 @@
         </div>
         <div>
           <div class="rd-pane-label" id="rd-right-label">本段解释</div>
-          <div class="rd-explain" id="rd-explain"></div>
+          <div class="rd-explain" id="rd-explain">
+            <div id="rd-explain-body"></div>
+            <div class="rd-explain-actions">
+              <button class="rd-btn ghost" id="rd-del" style="padding:5px 14px;font-size:12.5px">删除这条解释</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -197,7 +202,8 @@
           }
         }
         // 兜底：自绘草稿选区（宿主屏蔽原生文本选择时，如 ZCode 内置浏览器面板）
-        if (state.draft && state.draft.start < state.draft.end) {
+        if (state.draft && state.draft.scope !== "explain"
+            && state.draft.start < state.draft.end) {
           return { start: state.draft.start, end: state.draft.end };
         }
         return null;
@@ -231,32 +237,66 @@
         return pos;
       }
 
-      function setupDragSelect() {
-        const el = $("rd-text");
-        el.addEventListener("mousedown", (e) => {
-          if (e.button !== 0) return;
-          const off = caretOffset(el, e.clientX, e.clientY);
-          if (off == null) return;
-          dragging = true;
-          state.draft = { start: off, end: off };
-        });
-        el.addEventListener("mousemove", (e) => {
-          if (!dragging || !state.draft) return;
-          const off = caretOffset(el, e.clientX, e.clientY);
-          if (off == null) return;
-          state.draft.end = off;
-          renderActiveTab();
-        });
+      // 单击：选中"该位置所在的整句"（宿主拦截按住拖动时的主交互方式）
+      function sentenceRangeAt(text, pos) {
+        const isBound = (ch) => "。！？；!?;\n".includes(ch);
+        let start = Math.max(0, Math.min(pos, Math.max(0, text.length - 1)));
+        let end = start;
+        while (start > 0 && !isBound(text[start - 1])) start--;
+        while (end < text.length && !isBound(text[end])) end++;
+        if (end < text.length) end++;     // 含句末标点
+        return { start, end };
+      }
+
+      let moved = false;
+
+      function setupSelection() {
+        const bind = (el, scope) => {
+          if (!el) return;
+          el.addEventListener("mousedown", (e) => {
+            if (e.button !== 0) return;
+            const off = caretOffset(el, e.clientX, e.clientY);
+            if (off == null) return;
+            dragging = true;
+            moved = false;
+            state.draft = { start: off, end: off, scope };
+          });
+          el.addEventListener("mousemove", (e) => {
+            if (!dragging || !state.draft) return;
+            const off = caretOffset(el, e.clientX, e.clientY);
+            if (off == null) return;
+            if (off !== state.draft.start) moved = true;
+            state.draft.end = off;
+            renderActiveTab();
+          });
+          el.addEventListener("click", (e) => {
+            if (moved) { moved = false; return; }                      // 刚拖过：保留拖动结果
+            if (e.target.closest && e.target.closest(".mk")) return;   // 点在标记上：走标记自己的逻辑
+            const off = caretOffset(el, e.clientX, e.clientY);
+            if (off == null) return;
+            const tab = state.tabs[state.tabs.length - 1];
+            if (!tab) return;
+            const text = scope === "explain" ? (tab.explain || "") : tab.text;
+            const marks = scope === "explain" ? [] : (tab.marks || []);
+            const r = sentenceRangeAt(text, off);
+            const a = clampToMarks(r.start, marks);
+            const b = clampToMarks(r.end, marks);
+            state.draft = a < b ? { start: a, end: b, scope } : null;
+            renderActiveTab();
+          });
+        };
+        bind($("rd-text"), "text");
+        bind($("rd-explain-body"), "explain");
         document.addEventListener("mouseup", () => {
           if (!dragging) return;
           dragging = false;
           const d = state.draft;
           if (!d) return;
           const tab = state.tabs[state.tabs.length - 1];
-          const marks = (tab && tab.marks) || [];
+          const marks = d.scope === "explain" ? [] : ((tab && tab.marks) || []);
           const a = clampToMarks(Math.min(d.start, d.end), marks);
           const b = clampToMarks(Math.max(d.start, d.end), marks);
-          state.draft = a < b ? { start: a, end: b } : null;
+          state.draft = a < b ? { start: a, end: b, scope: d.scope } : null;
           renderActiveTab();
         });
       }
@@ -338,12 +378,16 @@
                                 start: state.draft.start, end: state.draft.end });
         }
         renderText($("rd-text"), tab.text, marksWithDraft);
-        $("rd-explain").innerHTML = esc(tab.explain || "（生成中或生成失败）")
-          + '<div class="rd-explain-actions">'
-          + '<button class="rd-btn ghost" id="rd-del" style="padding:5px 14px;font-size:12.5px">删除这条解释</button>'
-          + "</div>";
+        const explainText = tab.explain || "（生成中或生成失败）";
+        const explainMarks = [];
+        if (state.draft && state.draft.scope === "explain"
+            && state.draft.start < state.draft.end) {
+          explainMarks.push({ id: 0, kind: "draft",
+                              start: state.draft.start, end: state.draft.end });
+        }
+        renderText($("rd-explain-body"), explainText, explainMarks);
         const del = $("rd-del");
-        if (del) del.addEventListener("click", () => deleteNode(tab.nodeId));
+        if (del) del.onclick = () => deleteNode(tab.nodeId);
         $("rd-done").textContent = tab.isRoot
           ? (state.seg.index + 1 >= state.article.total ? "读完了 →" : "我懂了 →")
           : "收起这一层 ←";
@@ -480,8 +524,15 @@
       async function submit() {
         const question = $("rd-question").value.trim();
         const offsets = selectionOffsets($("rd-text"));
+        const explainDraft = (state.draft && state.draft.scope === "explain"
+                              && state.draft.start < state.draft.end) ? state.draft : null;
         const tab = state.tabs[state.tabs.length - 1];
-        if (!question && !offsets) { $("rd-ask-error").textContent = "先划选一段文字，或输入你的问题。"; return; }
+        if (!question && !offsets) {
+          $("rd-ask-error").textContent = explainDraft
+            ? "已选中解释中的内容——请连同你的问题一起提问。"
+            : "先划选一段文字，或输入你的问题。";
+          return;
+        }
         // 层内选区：把「层内偏移」换算回「段内偏移」（嵌套节点锚定在原文上）
         let posStart = null, posEnd = null;
         if (offsets) {
@@ -513,6 +564,10 @@
             // 有输入 = 私有提问（锚定选区或当前层）
             const body = { url: state.url, seg: state.seg.index, question };
             if (posStart != null) { body.pos_start = posStart; body.pos_end = posEnd; }
+            else if (explainDraft) {
+              const t = (tab && tab.explain) || "";
+              body.anchor_text = t.slice(explainDraft.start, explainDraft.end);
+            }
             else if (tab && !tab.isRoot && tab.nodeId) { body.parent_id = tab.nodeId; }
             const data = await api("/api/reading/ask", {
               method: "POST", headers: { "Content-Type": "application/json" },
@@ -548,9 +603,27 @@
         renderActiveTab();
       }
 
+      let pendingDelete = null;
+
       async function deleteNode(nodeId) {
         if (!nodeId) return;
-        if (!confirm("删除这条解释？它下面的追问也会一起删除。")) return;
+        // 二次点击确认（原生 confirm 弹窗可能被宿主屏蔽）
+        if (pendingDelete !== nodeId) {
+          pendingDelete = nodeId;
+          const btn = $("rd-del");
+          if (btn) btn.textContent = "再点一次确认删除";
+          setTimeout(() => {
+            if (pendingDelete === nodeId) {
+              pendingDelete = null;
+              const b = $("rd-del");
+              if (b) b.textContent = "删除这条解释";
+            }
+          }, 4000);
+          return;
+        }
+        pendingDelete = null;
+        const btnReset = $("rd-del");
+        if (btnReset) btnReset.textContent = "删除这条解释";
         try {
           await api("/api/reading/node/" + nodeId + "?url=" + encodeURIComponent(state.url),
                     { method: "DELETE" });
@@ -597,7 +670,7 @@
       $("rd-question").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
       $("rd-done").addEventListener("click", understood);
       $("rd-prev").addEventListener("click", () => goSegment(state.seg.index - 1));
-      setupDragSelect();   // 自绘划选（原生选择可用时也兼容）
+      setupSelection();   // 划选：按住拖动 + 单击选整句（均不依赖原生文本选择）
 
       const params = new URLSearchParams(location.search);
       const preset = params.get("url");

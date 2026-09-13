@@ -628,14 +628,18 @@ async def reading_ask(request: Request):
     if seg_text is None:
         return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
     anchor_text = ""
-    if isinstance(pos_start, int) and isinstance(pos_end, int) and 0 <= pos_start < pos_end <= len(seg_text):
-        anchor_text = seg_text[pos_start:pos_end]
-    else:
+    # 选区校验（无效则清空）
+    if not (isinstance(pos_start, int) and isinstance(pos_end, int)
+            and 0 <= pos_start < pos_end <= len(seg_text)):
         pos_start = pos_end = None
-        if parent_id is not None:
-            parent = await reading_store.get_node(int(parent_id))
-            if parent:
-                anchor_text = parent.get("question") or parent.get("content") or ""
+    # 提问锚点：优先用显式传入的选中文本（右栏解释里选中的内容），否则由区间/父节点推导
+    anchor_text = str(body.get("anchor_text") or "").strip()[:600]
+    if not anchor_text and pos_start is not None:
+        anchor_text = seg_text[pos_start:pos_end]
+    if not anchor_text and parent_id is not None:
+        parent = await reading_store.get_node(int(parent_id))
+        if parent:
+            anchor_text = parent.get("question") or parent.get("content") or ""
     try:
         answer = await ai.answer_question(question, plan.get("summary") or "",
                                           anchor_text, seg_text)
