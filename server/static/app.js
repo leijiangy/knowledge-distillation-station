@@ -8,6 +8,10 @@
     sidebarToggle: $("sidebar-toggle"), sidebarExpand: $("sidebar-expand"),
     favGroup: $("fav-group"), favParent: $("fav-parent"), favSub: $("fav-sub"),
     navHome: $("nav-home"), navHistory: $("nav-history"),
+    viewHome: $("view-home"), viewCollections: $("view-collections"),
+    homeLoginBtn: $("home-login-btn"), homeGotoCollections: $("home-goto-collections"),
+    homeBookmarklet: $("home-bookmarklet"), homeBookmarkletCode: $("home-bookmarklet-code"),
+    homeCopyBookmarklet: $("home-copy-bookmarklet"),
     userBlock: $("user-block"), userAvatar: $("user-avatar"), userName: $("user-name"), userSub: $("user-sub"),
     favlistTitle: $("favlist-title"), countBadge: $("count-badge"), loadedBadge: $("loaded-badge"),
     sortSelect: $("sort-select"), refreshBtn: $("refresh-btn"),
@@ -15,13 +19,7 @@
     stateLoading: $("state-loading"), loadingText: $("loading-text"),
     stateError: $("state-error"), errorText: $("error-text"), retryBtn: $("retry-btn"),
     stateEmpty: $("state-empty"), emptyText: $("empty-text"),
-    stateLogin: $("state-login"), loginText: $("login-text"), loginBtn: $("login-btn"),
     pager: $("pager"),
-    navBookmark: $("nav-bookmark"), loginBookmarkBtn: $("login-bookmark-btn"),
-    bookmarkModal: $("bookmark-modal"), bookmarkModalBackdrop: $("bookmark-modal-backdrop"),
-    bookmarkModalClose: $("bookmark-modal-close"),
-    bookmarkletLink: $("bookmarklet-link"), bookmarkletCode: $("bookmarklet-code"),
-    copyBookmarklet: $("copy-bookmarklet"),
     fulltextModal: $("fulltext-modal"), fulltextBackdrop: $("fulltext-backdrop"),
     fulltextClose: $("fulltext-close"), fulltextTitle: $("fulltext-title"),
     fulltextMeta: $("fulltext-meta"), fulltextBody: $("fulltext-body"),
@@ -68,8 +66,17 @@
 
   function initBookmarklet() {
     const code = buildBookmarklet();
-    if (els.bookmarkletLink) els.bookmarkletLink.setAttribute("href", code);
-    if (els.bookmarkletCode) els.bookmarkletCode.value = code;
+    if (els.homeBookmarklet) els.homeBookmarklet.setAttribute("href", code);
+    if (els.homeBookmarkletCode) els.homeBookmarkletCode.value = code;
+  }
+
+  // ---- 视图切换：首页 / 我的收藏 ----
+  function showView(name) {
+    const isHome = name === "home";
+    if (els.viewHome) els.viewHome.hidden = !isHome;
+    if (els.viewCollections) els.viewCollections.hidden = isHome;
+    if (els.navHome) els.navHome.classList.toggle("current", isHome);
+    if (els.favParent) els.favParent.classList.toggle("current", !isHome);
   }
 
   function openModal(el) { if (el) el.hidden = false; }
@@ -117,7 +124,7 @@
   }
 
   function showState(name) {
-    for (const key of ["stateLoading", "stateError", "stateEmpty", "stateLogin"]) {
+    for (const key of ["stateLoading", "stateError", "stateEmpty"]) {
       els[key].hidden = key !== "state" + name;
     }
     if (name) {
@@ -480,7 +487,7 @@
       renderCards();
     } catch (err) {
       if (err.code === "LOGIN_REQUIRED") {
-        showLoginState("请先登录知乎账号，查看属于你自己的收藏。");
+        showHome();
         return;
       }
       showState("Error");
@@ -488,18 +495,17 @@
     }
   }
 
-  function showLoginState(message) {
+  function showHome() {
+    showView("home");
     hideStates();
-    els.stateLogin.hidden = false;
     els.cards.innerHTML = "";
-    if (message) els.loginText.textContent = message;
-    if (!status || (!status.callback_configured && !status.self_mode)) {
-      els.loginBtn.disabled = true;
-      els.loginBtn.textContent = "部署后可用";
-      if (!message) els.loginText.textContent = "本地预览环境无法完成知乎登录（需要公网部署后的回调地址）。";
-    } else {
-      els.loginBtn.disabled = false;
-      els.loginBtn.textContent = "连接我的知乎收藏夹";
+    if (els.homeLoginBtn) {
+      const canLogin = Boolean(status && status.callback_configured);
+      els.homeLoginBtn.disabled = !canLogin;
+      els.homeLoginBtn.textContent = canLogin ? "连接我的知乎收藏夹" : "本地预览 · 部署后可登录";
+    }
+    if (els.homeGotoCollections) {
+      els.homeGotoCollections.hidden = !(status && (status.authorized || status.self_mode));
     }
   }
 
@@ -507,6 +513,7 @@
     try {
       status = await api("/api/oauth/status");
     } catch (err) {
+      showView("collections");
       showState("Error");
       els.errorText.textContent = "服务暂时不可用：" + (err.message || "请稍后重试");
       return;
@@ -514,17 +521,16 @@
     renderUser();
 
     const params = new URLSearchParams(location.search);
-    if (params.get("oauth") === "error") {
-      const msg = (status.error && status.error.message) || "登录未完成，请重试。";
-      showLoginState(msg);
-      return;
-    }
-
     const canRead = status.authorized || status.self_mode;
-    if (!canRead) {
-      showLoginState("");
+    if (params.get("oauth") === "error") {
+      showHome();
       return;
     }
+    if (!canRead) {
+      showHome();
+      return;
+    }
+    showView("collections");
     await loadFavlists();
     await loadCollections(null, false);
   }
@@ -540,7 +546,6 @@
   });
   els.refreshBtn.addEventListener("click", () => loadCollections(null, true));
   els.retryBtn.addEventListener("click", () => loadCollections(null, false));
-  els.loginBtn.addEventListener("click", () => { location.href = "/api/oauth/start"; });
   els.userBlock.addEventListener("click", async () => {
     if (status && status.authorized) {
       await api("/api/oauth/logout", { method: "POST" });
@@ -549,27 +554,29 @@
     }
     if (status && status.callback_configured) location.href = "/api/oauth/start";
   });
-  // 占位导航：首页 / 学习记录（暂不跳转）
-  for (const el of [els.navHome, els.navHistory]) {
-    el.addEventListener("click", (event) => event.preventDefault());
+  // 占位导航：学习记录（暂不跳转）
+  els.navHistory.addEventListener("click", (event) => event.preventDefault());
+
+  // 首页 / 收藏视图切换
+  els.navHome.addEventListener("click", () => showView("home"));
+  if (els.homeGotoCollections) {
+    els.homeGotoCollections.addEventListener("click", () => showView("collections"));
+  }
+  if (els.homeLoginBtn) {
+    els.homeLoginBtn.addEventListener("click", () => { location.href = "/api/oauth/start"; });
   }
 
-  // 蒸馏书签：教程弹窗与复制
+  // 蒸馏书签：初始化与复制
   initBookmarklet();
-  const openBookmarkTutorial = () => openModal(els.bookmarkModal);
-  if (els.navBookmark) els.navBookmark.addEventListener("click", openBookmarkTutorial);
-  if (els.loginBookmarkBtn) els.loginBookmarkBtn.addEventListener("click", openBookmarkTutorial);
-  if (els.bookmarkModalClose) els.bookmarkModalClose.addEventListener("click", () => closeModal(els.bookmarkModal));
-  if (els.bookmarkModalBackdrop) els.bookmarkModalBackdrop.addEventListener("click", () => closeModal(els.bookmarkModal));
-  if (els.copyBookmarklet) {
-    els.copyBookmarklet.addEventListener("click", async () => {
+  if (els.homeCopyBookmarklet) {
+    els.homeCopyBookmarklet.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(els.bookmarkletCode.value);
-        els.copyBookmarklet.textContent = "已复制 ✓";
-        setTimeout(() => { els.copyBookmarklet.textContent = "复制书签代码"; }, 1800);
+        await navigator.clipboard.writeText(els.homeBookmarkletCode.value);
+        els.homeCopyBookmarklet.textContent = "已复制 ✓";
+        setTimeout(() => { els.homeCopyBookmarklet.textContent = "复制书签代码"; }, 1800);
       } catch (err) {
-        els.bookmarkletCode.select();
-        els.copyBookmarklet.textContent = "请按 Ctrl+C 复制";
+        els.homeBookmarkletCode.select();
+        els.homeCopyBookmarklet.textContent = "请按 Ctrl+C 复制";
       }
     });
   }
@@ -577,10 +584,7 @@
   if (els.fulltextClose) els.fulltextClose.addEventListener("click", () => closeModal(els.fulltextModal));
   if (els.fulltextBackdrop) els.fulltextBackdrop.addEventListener("click", () => closeModal(els.fulltextModal));
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      closeModal(els.bookmarkModal);
-      closeModal(els.fulltextModal);
-    }
+    if (event.key === "Escape") closeModal(els.fulltextModal);
   });
 
   // 开发调试入口（本地预览用）

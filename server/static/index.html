@@ -22,13 +22,15 @@
         </div>
 
         <nav class="nav-list">
-          <a class="nav-item" href="#" id="nav-home">
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 11 L12 4.5 L20 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10.5 V19.5 H18 V10.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            首页
-          </a>
+          <button class="nav-item nav-parent current" id="nav-home">
+            <span class="left">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 11 L12 4.5 L20 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10.5 V19.5 H18 V10.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              首页
+            </span>
+          </button>
 
           <div class="nav-group open" id="fav-group">
-            <button class="nav-item nav-parent current" id="fav-parent">
+            <button class="nav-item nav-parent" id="fav-parent">
               <span class="left">
                 <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><polygon points="12,5 19,16 5,16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
                 我的收藏
@@ -45,10 +47,6 @@
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="12,7.5 12,12 15,13.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             学习记录
           </a>
-          <button class="nav-item nav-button" id="nav-bookmark">
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 3.5 H18 V20 L12 15.5 L6 20 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-            蒸馏书签
-          </button>
         </nav>
 
         <div class="user-block" id="user-block">
@@ -63,78 +61,83 @@
 
     <!-- 内容区 -->
     <main class="content">
-      <div class="toolbar">
-        <div class="toolbar-left">
-          <button class="sidebar-toggle" id="sidebar-expand" title="展开侧边栏" aria-label="展开侧边栏">
-            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="11,6 17,12 11,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <h2 id="favlist-title">我的收藏 <span class="count" id="count-badge"></span></h2>
+      <!-- 视图一：首页（产品介绍 + 蒸馏书签教程） -->
+      <section class="view" id="view-home" hidden>
+        <div class="home-hero">
+          <h1>你的收藏夹，<br>不该只是收藏。</h1>
+          <p>连接你的知乎收藏夹，逐条呈现认可度、信息量、准确性——找出真正值得学的那一篇。</p>
+          <div class="home-actions">
+            <button class="btn-primary" id="home-login-btn">连接我的知乎收藏夹</button>
+            <button class="btn-ghost" id="home-goto-collections" hidden>浏览我的收藏 →</button>
+          </div>
         </div>
-        <div class="toolbar-right">
-          <span class="loaded-badge" id="loaded-badge" hidden></span>
-          <select id="sort-select" class="select" aria-label="排序方式">
-            <option value="favtime">收藏时间（新→旧）</option>
-            <option value="combined">综合分数（高→低）</option>
-            <option value="approval">认可度（高→低）</option>
-            <option value="richness">信息量（高→低）</option>
-            <option value="credibility">准确性（高→低）</option>
-          </select>
-          <button class="btn-ghost" id="refresh-btn">刷新</button>
+
+        <div class="home-bookmark">
+          <h3>🔖 蒸馏书签 —— 把知乎文章全文送进来</h3>
+          <p class="home-bookmark-sub">收藏列表给的是摘要。想要某篇文章的<b>全文</b>做深度学习？用这个书签：</p>
+          <div class="tsteps">
+            <div class="tstep">
+              <b>① 把它拖进书签栏</b><span class="hint">一次性操作，5 秒</span>
+              <div class="bookmarklet-wrap">
+                <a class="bookmarklet" id="home-bookmarklet" href="javascript:void(0)" draggable="true">🧪 蒸馏这篇文章</a>
+              </div>
+            </div>
+            <div class="tstep">
+              <b>② 在知乎文章页点它</b><span class="hint">弹窗确认「蒸馏这篇文章？」→ 确定</span>
+            </div>
+            <div class="tstep">
+              <b>③ 回来看结果</b><span class="hint">列表里亮起「✓ 已蒸馏」，点击即可读全文</span>
+            </div>
+          </div>
+          <details class="manual">
+            <summary>拖不动？点这里手动添加（复制书签代码）</summary>
+            <textarea class="bookmarklet-code" id="home-bookmarklet-code" readonly rows="3"></textarea>
+            <button class="btn-ghost btn-small" id="home-copy-bookmarklet">复制书签代码</button>
+          </details>
         </div>
-      </div>
+      </section>
 
-      <div class="cards" id="cards"></div>
+      <!-- 视图二：我的收藏（列表） -->
+      <section class="view" id="view-collections" hidden>
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <button class="sidebar-toggle" id="sidebar-expand" title="展开侧边栏" aria-label="展开侧边栏">
+              <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="11,6 17,12 11,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <h2 id="favlist-title">我的收藏 <span class="count" id="count-badge"></span></h2>
+          </div>
+          <div class="toolbar-right">
+            <span class="loaded-badge" id="loaded-badge" hidden></span>
+            <select id="sort-select" class="select" aria-label="排序方式">
+              <option value="favtime">收藏时间（新→旧）</option>
+              <option value="combined">综合分数（高→低）</option>
+              <option value="approval">认可度（高→低）</option>
+              <option value="richness">信息量（高→低）</option>
+              <option value="credibility">准确性（高→低）</option>
+            </select>
+            <button class="btn-ghost" id="refresh-btn">刷新</button>
+          </div>
+        </div>
 
-      <div class="state-box" id="state-loading" hidden>
-        <div class="spinner"></div>
-        <p id="loading-text">正在读取收藏夹……</p>
-      </div>
-      <div class="state-box" id="state-error" hidden>
-        <span class="state-icon">⚠️</span>
-        <p id="error-text"></p>
-        <button class="btn-primary" id="retry-btn">重试</button>
-      </div>
-      <div class="state-box" id="state-empty" hidden>
-        <span class="state-icon">🗒️</span>
-        <p id="empty-text">这个收藏夹还是空的。</p>
-      </div>
-      <div class="state-box" id="state-login" hidden>
-        <span class="state-icon">🔗</span>
-        <p id="login-text">连接你的知乎收藏夹，开始蒸馏。</p>
-        <button class="btn-primary" id="login-btn">连接我的知乎收藏夹</button>
-        <button class="btn-ghost" id="login-bookmark-btn">🔖 了解「蒸馏书签」</button>
-      </div>
+        <div class="cards" id="cards"></div>
 
-      <!-- 底部分页器（浮动） -->
-      <nav class="pager" id="pager" hidden aria-label="分页"></nav>
+        <div class="state-box" id="state-loading" hidden>
+          <div class="spinner"></div>
+          <p id="loading-text">正在读取收藏夹……</p>
+        </div>
+        <div class="state-box" id="state-error" hidden>
+          <span class="state-icon">⚠️</span>
+          <p id="error-text"></p>
+          <button class="btn-primary" id="retry-btn">重试</button>
+        </div>
+        <div class="state-box" id="state-empty" hidden>
+          <span class="state-icon">🗒️</span>
+          <p id="empty-text">这个收藏夹还是空的。</p>
+        </div>
+
+        <nav class="pager" id="pager" hidden aria-label="分页"></nav>
+      </section>
     </main>
-  </div>
-
-  <!-- 蒸馏书签 · 使用教程弹窗 -->
-  <div class="modal" id="bookmark-modal" hidden>
-    <div class="modal-backdrop" id="bookmark-modal-backdrop"></div>
-    <div class="modal-panel">
-      <button class="modal-close" id="bookmark-modal-close" aria-label="关闭">×</button>
-      <h3 class="modal-title">🔖 蒸馏书签 —— 把知乎文章全文送进来</h3>
-      <p class="modal-sub">收藏列表给的是摘要。<b>想要某篇文章的全文</b>做深度学习？用这个书签：</p>
-      <ol class="tutorial">
-        <li>
-          <b>把它拖进书签栏</b>（一次性，5 秒）<br>
-          <span class="bookmarklet-wrap">
-            <a class="bookmarklet" id="bookmarklet-link" href="javascript:void(0)" draggable="true">🧪 蒸馏这篇文章</a>
-          </span>
-          <p class="hint">拖不动？右键书签栏 →「添加页面」→ 名称随意，网址粘贴下方代码（点击可复制）</p>
-          <textarea class="bookmarklet-code" id="bookmarklet-code" readonly rows="3"></textarea>
-          <button class="btn-ghost btn-small" id="copy-bookmarklet">复制书签代码</button>
-        </li>
-        <li>
-          <b>去知乎点它</b>：打开任意知乎回答或文章 → 点书签栏里的它 → 弹窗确认"蒸馏这篇文章？"→ 点确定
-        </li>
-        <li>
-          <b>回来看结果</b>：文章全文已进入蒸馏站，列表里会亮起「✓ 已蒸馏」标记，点击可读全文
-        </li>
-      </ol>
-    </div>
   </div>
 
   <!-- 全文查看弹窗 -->

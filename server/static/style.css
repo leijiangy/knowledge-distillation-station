@@ -269,8 +269,6 @@ body {
 .modal-close:hover { background: rgba(47, 122, 61, .08); color: var(--ink); }
 .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; padding-right: 30px; }
 .modal-sub { color: var(--ink-2); font-size: 13.5px; margin-bottom: 16px; }
-.tutorial { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 16px; font-size: 13.5px; color: var(--ink-2); }
-.tutorial li b { color: var(--ink); }
 .bookmarklet-wrap { display: inline-block; margin: 10px 0 6px; }
 .bookmarklet {
   display: inline-block; background: var(--green); color: #f6fbf3; text-decoration: none;
@@ -299,6 +297,26 @@ body {
   font-family: inherit;
 }
 .distill-badge:hover { background: rgba(47, 122, 61, .16); }
+
+/* ---- 首页视图 ---- */
+.home-hero { padding: 30px 0 8px; }
+.home-hero h1 { font-size: 34px; line-height: 1.5; font-weight: 700; letter-spacing: -.3px; }
+.home-hero p { color: var(--ink-2); margin-top: 12px; max-width: 560px; font-size: 15px; }
+.home-actions { display: flex; gap: 12px; align-items: center; margin-top: 22px; flex-wrap: wrap; }
+.btn-primary:disabled { background: #a8bfa8; cursor: default; }
+
+.home-bookmark {
+  margin-top: 34px; background: rgba(255, 255, 253, .92);
+  border: 1px solid var(--line); border-radius: 12px; padding: 22px 26px 20px;
+}
+.home-bookmark h3 { font-size: 16px; margin-bottom: 6px; }
+.home-bookmark-sub { color: var(--ink-2); font-size: 13.5px; margin-bottom: 18px; }
+.tsteps { display: flex; flex-direction: column; gap: 14px; }
+.tstep { font-size: 13.5px; color: var(--ink); }
+.tstep .hint { display: block; color: var(--ink-3); font-size: 12px; margin-top: 3px; }
+.manual { margin-top: 18px; font-size: 12.5px; color: var(--ink-2); }
+.manual summary { cursor: pointer; color: var(--green); }
+.manual textarea { margin-top: 10px; }
 
 /* ---- 状态盒 ---- */
 .state-box {
