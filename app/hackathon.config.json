@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "projectName": "知识蒸馏站",
+  "projectSlug": "知识蒸馏站",
+  "oauth": {
+    "enabled": true,
+    "appId": "441",
+    "redirectUri": null,
+    "credentialService": "zhihu-hackathon:知识蒸馏站:ed81696415",
+    "credentialAccount": "oauth-app-key"
+  },
+  "host": "127.0.0.1",
+  "port": 4173
+}
