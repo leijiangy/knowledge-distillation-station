@@ -24,6 +24,9 @@
     fulltextModal: $("fulltext-modal"), fulltextBackdrop: $("fulltext-backdrop"),
     fulltextClose: $("fulltext-close"), fulltextTitle: $("fulltext-title"),
     fulltextMeta: $("fulltext-meta"), fulltextBody: $("fulltext-body"),
+    distillGuide: $("distill-guide"), distillGuideClose: $("distill-guide-close"),
+    distillGuideDot: $("distill-guide-dot"), distillGuideTitle: $("distill-guide-title"),
+    distillGuideBody: $("distill-guide-body"),
   };
 
   const PAGE_SIZE = 8;   // 每页卡片数
@@ -178,7 +181,7 @@
     const dist = distilledMap[dKey];
     const badgeHtml = dist
       ? `<button class="distill-badge" data-distill="${escapeHtml(dKey)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`
-      : "";
+      : `<button class="go-distill" data-godistill="${escapeHtml(dKey)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}">🧪 去蒸馏全文</button>`;
     const labels = ["approval", "richness", "credibility"].map((kind) => {
       const metric = m[kind] || {};
       const basis = (metric.basis || []).join(" · ");
@@ -230,6 +233,11 @@
     els.cards.innerHTML = sorted.slice(start, start + PAGE_SIZE).map(cardHtml).join("");
     els.cards.querySelectorAll("[data-distill]").forEach((btn) => {
       btn.addEventListener("click", () => openFulltext(btn.getAttribute("data-distill"), btn.getAttribute("data-title")));
+    });
+    els.cards.querySelectorAll("[data-godistill]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        goDistill(btn.getAttribute("data-godistill"), btn.getAttribute("data-gourl"), btn.getAttribute("data-gotitle"));
+      });
     });
     renderPager();
     observeCards();
@@ -614,6 +622,96 @@
   if (els.fulltextBackdrop) els.fulltextBackdrop.addEventListener("click", () => closeModal(els.fulltextModal));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeModal(els.fulltextModal);
+  });
+
+  // ---- 「去蒸馏全文」：打开知乎原文 + 自动等待结果（全文送达后卡片自动点亮） ----
+  const WATCH_INTERVAL = 2500;    // 轮询间隔（毫秒）
+  const WATCH_TIMEOUT = 180000;   // 3 分钟没等到就提示
+  let watch = null;               // {key, title, timer, deadline}
+
+  function goDistill(key, url, title) {
+    window.open(url, "_blank", "noopener");
+    startWatch(key, title);
+  }
+
+  function startWatch(key, title) {
+    stopWatch();
+    watch = { key, title, deadline: Date.now() + WATCH_TIMEOUT, timer: setInterval(checkWatch, WATCH_INTERVAL) };
+    showGuide("watching", title);
+  }
+
+  function stopWatch() {
+    if (watch && watch.timer) clearInterval(watch.timer);
+    watch = null;
+  }
+
+  async function checkWatch() {
+    if (!watch) return;
+    try {
+      const data = await api("/api/distilled");
+      const items = data.ok ? (data.items || {}) : null;
+      if (items && items[watch.key]) {
+        const length = items[watch.key].length || 0;
+        const title = watch.title;
+        distilledMap = items;
+        stopWatch();
+        showGuide("success", title, length);
+        if (els.viewCollections && !els.viewCollections.hidden) renderCards();
+        return;
+      }
+    } catch (err) { /* 网络抖动：下一轮再试 */ }
+    if (watch && Date.now() > watch.deadline) {
+      const title = watch.title;
+      stopWatch();
+      showGuide("timeout", title);
+    }
+  }
+
+  function showGuide(state, title, length) {
+    if (!els.distillGuide) return;
+    els.distillGuide.hidden = false;
+    els.distillGuide.classList.toggle("success", state === "success");
+    if (state === "watching") {
+      els.distillGuideDot.hidden = false;
+      els.distillGuideTitle.textContent = "等待全文送达…";
+      els.distillGuideBody.innerHTML =
+        "已打开知乎原文。请在那一页点一下书签栏的 <b>「🧪 蒸馏这篇文章」</b>，确认后这里会自动亮起。"
+        + (title ? `<div class="gd-target">《${escapeHtml(title)}》</div>` : "");
+    } else if (state === "success") {
+      els.distillGuideDot.hidden = true;
+      els.distillGuideTitle.textContent = "✓ 蒸馏成功";
+      els.distillGuideBody.innerHTML =
+        `全文 <b>${length || 0} 字</b>已存入，卡片上的「✓ 已蒸馏」已点亮，点击即可读全文。`
+        + (title ? `<div class="gd-target">《${escapeHtml(title)}》</div>` : "");
+      setTimeout(() => { if (!watch && els.distillGuide) els.distillGuide.hidden = true; }, 12000);
+    } else if (state === "timeout") {
+      els.distillGuideDot.hidden = true;
+      els.distillGuideTitle.textContent = "还没收到全文";
+      els.distillGuideBody.innerHTML = "书签还没装好？回首页拖一下（5 秒）；装好后到知乎文章页再点一次即可。";
+    }
+  }
+
+  if (els.distillGuideClose) {
+    els.distillGuideClose.addEventListener("click", () => {
+      stopWatch();
+      els.distillGuide.hidden = true;
+    });
+  }
+
+  // 切回本页时立即检查一次：既覆盖「去蒸馏」等待中，也覆盖手动在知乎页蒸好的情况
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState !== "visible") return;
+    if (watch) { checkWatch(); return; }
+    if (!els.viewCollections || els.viewCollections.hidden || !allItems.length) return;
+    try {
+      const data = await api("/api/distilled");
+      const items = data.ok ? (data.items || {}) : null;
+      if (!items) return;
+      if (Object.keys(items).join("|") !== Object.keys(distilledMap).join("|")) {
+        distilledMap = items;
+        renderCards();
+      }
+    } catch (err) { /* 静默 */ }
   });
 
   // 开发调试入口（本地预览用）

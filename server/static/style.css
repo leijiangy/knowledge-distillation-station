@@ -298,6 +298,47 @@ body {
 }
 .distill-badge:hover { background: rgba(47, 122, 61, .16); }
 
+/* ---- 去蒸馏按钮（未蒸馏卡片：虚线描边，提示可操作） ---- */
+.go-distill {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+  background: transparent; color: var(--ink-2);
+  border: 1px dashed #c6d2bf; border-radius: 999px;
+  padding: 3px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: inherit;
+}
+.go-distill:hover { color: var(--green); border-color: rgba(47, 122, 61, .45); background: rgba(47, 122, 61, .05); }
+
+/* ---- 蒸馏引导浮层（右下角纸质小卡：等待 → 成功 自动流转） ---- */
+.distill-guide {
+  position: fixed; right: 24px; bottom: 24px; z-index: 90;
+  width: 320px; max-width: calc(100vw - 40px);
+  background-color: rgba(253, 252, 248, .98); background-image: var(--noise);
+  border: 1px solid rgba(47, 122, 61, .28); border-radius: 12px;
+  box-shadow: 0 18px 44px -18px rgba(30, 40, 28, .42), 0 2px 8px rgba(30, 40, 28, .08);
+  padding: 14px 18px 13px 16px;
+}
+.distill-guide.success { border-color: rgba(47, 122, 61, .5); }
+.distill-guide h4 { font-size: 13.5px; display: flex; align-items: center; gap: 8px; padding-right: 18px; }
+.gd-close {
+  position: absolute; top: 8px; right: 8px; width: 24px; height: 24px;
+  border: 0; border-radius: 6px; background: none; color: var(--ink-3);
+  font-size: 16px; line-height: 1; cursor: pointer; font-family: inherit;
+}
+.gd-close:hover { background: rgba(47, 122, 61, .08); color: var(--ink); }
+.gd-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+  flex: 0 0 8px; animation: gd-pulse 1.2s ease-in-out infinite;
+}
+@keyframes gd-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+.gd-body { margin-top: 6px; font-size: 12.5px; color: var(--ink-2); line-height: 1.7; }
+.gd-body b { color: var(--green); }
+.gd-target {
+  margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line);
+  color: var(--ink-3); font-size: 12px;
+  overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+
 /* ---- 首页视图 ---- */
 .home-hero { padding: 30px 0 8px; }
 .home-hero h1 { font-size: 34px; line-height: 1.5; font-weight: 700; letter-spacing: -.3px; }
