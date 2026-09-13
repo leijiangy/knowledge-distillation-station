@@ -1,0 +1,19 @@
+# 凭证与本地环境绝不进镜像
+.env
+.env.*
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# 运行时产物
+*.log
+cookie.txt
+
+# 本地脚本（不影响容器运行）
+start.bat
+start.sh
+
+# 测试（镜像内不需要）
+tests/
+.pytest_cache/

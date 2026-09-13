@@ -74,6 +74,7 @@ async def oauth_status(request: Request, response: Response):
         "ok": True,
         "configured": settings.oauth_ready,
         "callback_configured": bool(settings.REDIRECT_URI),
+        "self_mode": settings.ALLOW_SELF_MODE,  # 本地预览模式（未登录直接读本人收藏）
         "authorized": bool(session.token),
         "app_id": settings.APP_ID,
         "redirect_uri": settings.REDIRECT_URI or None,
