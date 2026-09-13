@@ -68,6 +68,24 @@ description: 知识蒸馏站开发过程中踩过的坑与解法（Windows 环�
 - **现象**：用户数据能力组每天全组共享 100 次，开发调试几次就消耗不少
 - **解法**：开发期用缓存/抓包样本；探测脚本一次性把数据存本地 JSON 反复用；线上必须缓存
 
+## 11. httpx 在污染 CA 的环境下 TLS 验证失败（已修复）
+
+- **现象**：urllib/curl 能访问知乎接口，但 httpx 报 `[SSL: CERTIFICATE_VERIFY_FAILED] self-signed certificate in certificate chain`；显式传 CA 路径、SSLContext、verify=True 都失败
+- **原因**：环境变量 `SSL_CERT_FILE` 指向单证书自签 CA（`C:\Users\JM\.zcode\proxy\ca.pem`，仅 1 张证书），而公网站点（知乎）是真实 DigiCert 证书；httpx 默认 `trust_env=True` 会读该变量，把 CA 库换成这张自签证书 → 验证必然失败
+- **解法**：`httpx.AsyncClient(trust_env=False)` —— 用 httpx 自带 certifi 公认 CA 库做标准验证；**生产环境行为一致，不降低安全性**（代码已在 `server/core/zhihu.py` 的 `client()` 固化）
+- **排查方法**：手动 `ssl.create_default_context()` 握手对比 + 打印 `ca.pem` 里的证书数量（`data.count(b"BEGIN CERTIFICATE")`，1 张就是污染源）
+
+## 12. CMD 下多行 `python -c` 会静默失败
+
+- **现象**：`python -c "多行代码"` 在 CMD 里没有输出也不报错（换行被吞）
+- **解法**：写成临时 .py 脚本再执行；或改用 PowerShell 传 here-string
+
+## 13. 前端 `[hidden]` 属性被 CSS 的 display 覆盖
+
+- **现象**：JS 设置 `el.hidden = true` 但元素仍显示（如未登录时的「退出」按钮）
+- **原因**：CSS 里给该元素设了 `display: flex` 等，优先级高于 hidden 属性的 UA 样式
+- **解法**：样式表加一条 `[hidden] { display: none !important; }`（已加入 server/static/style.css）
+
 ---
 
 新坑随时追加到本文件，格式保持「坑 → 现象 → 解法」。

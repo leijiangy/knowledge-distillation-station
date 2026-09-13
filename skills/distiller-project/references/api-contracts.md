@@ -42,11 +42,16 @@ Content-Type: application/json
 - FavTime 收藏时间秒级时间戳；Favlists 是该内容所在的收藏夹数组
 - Author 可能缺失（下游未返回时不输出）
 
-## 实测结论（2026-09-13，用户本人账号）
+## 实测结论（2026-09-13，用户本人账号 + Python 后端）
 
 - favlists 返回 1 个收藏夹（含私密夹，**私密收藏夹本人 API 可读**）
 - favlist_contents 一页 49 条即 IsEnd=True，分页协议正常
-- OAuth 模式（X-OAuth-Token）读取授权用户数据的链路由官方模板 `runAll` 封装，部署后验收
+- `/api/collections`（Python 版）全量返回 49 条 + 三指标，缓存命中验证通过
+- **OAuth 真实登录待部署后验收**（本地无公网回调，官方明令本地地址不可作回调）
+- 已知实现细节：
+  - httpx 必须 `trust_env=False`（环境 SSL_CERT_FILE 污染，见 distiller-pitfalls 第 11 条）
+  - `Paging.NextOffset` 是 String，转 int 失败要停止而非猜测
+  - `/user` 的 `uid` 是 int64，Python 无精度问题（JS 需注意）
 
 ## 搜索 / 直答（第二层用）
 

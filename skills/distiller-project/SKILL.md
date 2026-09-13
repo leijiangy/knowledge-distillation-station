@@ -5,62 +5,77 @@ description: 知识蒸馏站（知乎黑客松 2026 参赛项目）的项目上�
 
 # 知识蒸馏站 项目上下文
 
+## 先读基准文档
+
+**`docs/项目企划书.md` 是项目唯一基准**：功能范围、优先级、技术选型、决策记录、变更规则全在里面。本 skill 是快速导航，两者冲突时以企划书为准；改方向先在企划书登记再动代码。
+
 ## 这是什么项目
 
-知乎黑客松 2026 校园新锐季参赛作品：一个「帮你把收藏的每篇回答真正学会」的在线智能体网站。
-核心洞察：用户收藏了很多知乎回答/文章，但「收藏 ≠ 学会」。产品读取用户收藏夹，对每条收藏给出三个指标，帮用户找出「一直想学却没弄懂」的那篇，再逐层教会用户。
+知乎黑客松 2026 校园新锐季参赛作品：连接用户的知乎收藏夹，把它从「知识坟场」变成学习进度表。
+核心洞察：收藏 ≠ 学会。产品读完收藏夹，对每条内容给出三指标，帮用户找到真正值得花时间学的那篇。
 
-## 三层能力（递进，按优先级实现）
+赛道：知识炼金场（社区 × 学习）。提交截止 9/15 10:00，不可更改替换。
 
-1. **第一层（必须今天完成）**：访问用户收藏夹，逐条展示 准确性 / 信息量 / 认可度 三指标 → 用户选出想学没弄懂的那篇
-2. **第二层**：用知乎全站搜索接口找同类内容，按指标推荐更高分的回答/文章
-3. **第三层（视进度取舍）**：读回答里的论文 / GitHub 链接，讲解给用户
+## 当前阶段范围（9/13 收窄后）
 
-## 硬约束（不可改）
+- ✅ **在做**：「看见」闭环——登录 → 收藏全量读取 → 三指标卡片 → 排序（已完成本地版）
+- ⏸️ **暂停待研究**：学习会话（补共识/拆逻辑）、同类替换——等学习方式文献研究完成后重新设计
+- 🚫 **已取消**：「我一直没弄懂」手动标记（F7）
 
-- 提交截止 **9/15 10:00**，提交后不可更改替换 → 9/14 深夜冻结
-- 必交：公网可跑 Demo + 产品说明计划书；选交：代码仓库（加分）
-- 评审权重：AI 场景价值 40% / 创新度 25% / 完成度 25% / 设计感 10%
-- 人气奖（9/13–9/23）：项目广场点赞+使用+评论，且**接入知乎登录的用户数是重要参考**
-- 凭证（App Key / Access Secret / OAuth Token）绝不进 git、前端、日志、截图
+## 技术架构（Python 版，勿换栈）
 
-## 技术架构（已定，勿换栈）
+```
+浏览器（原生 HTML/CSS/JS，无构建）
+   └─ server/main.py（FastAPI + uvicorn）
+        ├─ /api/oauth/*      登录、回调、会话（core/oauth.py）
+        ├─ /api/favlists     收藏夹列表
+        ├─ /api/collections  收藏全量分页读取 + 三指标（core/zhihu.py + analyze.py）
+        └─ 两级缓存（core/cache.py）：内容键全站共享 + 用户键私有，TTL
+```
 
-- `app/`：官方脚手架起步的 Node **零依赖** HTTP 服务（`server.mjs` + `lib/oauth.mjs` + `public/`），端口 4173。保持零依赖，部署简单。
-- OAuth 流程已由官方模板实现：`/api/oauth/start` → 知乎授权 → `/auth/callback` → token 存服务端内存会话
-- 凭证在 `app/.env`（gitignore 已忽略），`server.mjs` 启动时加载；部署平台用其 Secret 能力
-- 五项用户接口封装在 `lib/oauth.mjs` 的 `runAll`（contents/followees/favlists/favlist_contents/collections）
+- 依赖仅 fastapi / uvicorn / httpx（requirements.txt）；测试用 pytest
+- AI 能力用 DeepSeek（OpenAI 兼容接口，密钥 `DEEPSEEK_API_KEY`）——学习会话接入时使用
+- 凭证在 `server/.env`（gitignore 已忽略）；部署用 CloudBase 环境变量
+- **httpx 必须 `trust_env=False`**：环境里的 SSL_CERT_FILE 会污染公网站点 TLS 验证（详见 distiller-pitfalls）
 
 ## 知乎 API 关键事实（实测确认）
 
 详见 [references/api-contracts.md](references/api-contracts.md)。最重要的：
 
-- 域名 `https://developer.zhihu.com`，鉴权 = `Authorization: Bearer <access_secret>` + `X-OAuth-Token`（OAuth 用户）+ `X-Request-Timestamp`（秒级）
-- **取全收藏夹走 `favlists` + `favlist_contents`（有 Offset 分页）**；`collections` 只有近期 Top 50 无分页，仅做快捷入口
-- 认可度三指标（LikeCount/CommentCount/FavoriteCount）接口直接返回
-- **额度每能力组每日 100 次** → 服务端必须缓存收藏数据（内存 TTL 即可），不能每个访客实时打接口
+- 域名 `https://developer.zhihu.com`；用户数据接口 = `Bearer <Access Secret>` + `X-OAuth-Token`（代表授权用户）+ `X-Request-Timestamp`
+- `https://openapi.zhihu.com/user` 例外：**只带 `Bearer <oauth_token>`**（官方 profile 文档明确；code 20000 也是成功）
+- **取全收藏夹走 favlists + favlist_contents**（有 Offset 分页）；collections 只有近期 Top 50 无分页
+- 额度每能力组每日 100 次 → 服务端必须缓存（已实现）
 
 ## 三指标口径（产品核心，别漂移）
 
-- **认可度**：接口三计数（赞/评/藏）归一化，对数缩放
-- **准确性**：搜索接口的认证标（AuthorBadge）+ 直答交叉验证（第二层实现时细化）
-- **信息量**：摘要长度/结构 + 引用密度启发式起步，后续可换模型
+- **认可度**：赞/评/藏三计数对数缩放加权（收藏 0.5 / 赞同 0.3 / 评论 0.2）
+- **信息量**：摘要长度 + 结构信号 + 引用密度启发式
+- **准确性（v1）**：公开信号代理（作者完整度/内容类型/外部引用），basis 透明列出；完整版接搜索接口认证标交叉
+- **三个指标分开展示，不合成综合分**（团队决策 D2）
 
 ## 目录速览
 
 ```
-app/                    应用本体（Node 零依赖）
-  .env                  凭证（不入库）
-  hackathon.config.json 项目配置（App ID 441）
-  lib/oauth.mjs         OAuth + 五项用户接口
-skills/                 各类 skill 包（官方 + 自建 + Windows 适配脚本）
-probe/                  接口探测脚本（probe_favorites.py，已验证全通）
-TODO.md                 48 小时任务看板
+server/                  Python 应用（FastAPI）
+  main.py                入口 + 路由
+  core/                  config / oauth / zhihu / cache / analyze / sessions
+  static/                前端（index.html + app.js + style.css）
+  tests/                 pytest
+  .env                   凭证（不入库）
+app/                     官方 Node 脚手架（OAuth 协议参考实现，已归档）
+docs/                    企划书（基准）+ 资料归档 + 技术指南存档
+skills/                  官方 skill 包 + distiller-project / distiller-pitfalls
+probe/                   接口探测脚本（probe_favorites.py 已验证）
+TODO.md                  48 小时任务看板
 ```
 
-## 待办里程碑
+## 当前进度与里程碑
 
-- 今天：第一层功能 + 部署公网 + 配 OAuth 回调 + 发想法帖
-- 9/14：第二层 + 计划书初稿 + Demo 链接进想法帖
-- 9/14 深夜：冻结
-- 9/15 上午：只做缓冲和提交
+| 时间 | 目标 | 状态 |
+|---|---|---|
+| 9/13 | 企划书确定 + 「看见」闭环本地可用 + 部署材料 | ✅ 基本完成 |
+| 9/13 晚–9/14 | 学习方式文献研究（D1） | ⏳ |
+| 9/14 | CloudBase 部署 + OAuth 回调 + 真实登录验收 | ⏳ |
+| 9/14 深夜 | 内部冻结（链接可跑、测试账号可用、计划书定稿） | ⏳ |
+| 9/15 上午 | 只留缓冲，9:00 前提交完毕 | ⏳ |
