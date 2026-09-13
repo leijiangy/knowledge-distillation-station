@@ -50,7 +50,7 @@
   let page = 1;               // 当前页码（客户端分页）
   let distilledMap = {};      // 已蒸馏内容索引：url(去参) -> {title, length, at}
 
-  // ---- 蒸馏书签（动态生成：写入当前站点域名） ----
+  // ---- 蒸馏书签（动态生成：写入当前站点域名；带 #kd=1 来源标记的页面蒸完自动跳回） ----
   function buildBookmarklet() {
     const origin = window.location.origin;
     return [
@@ -61,9 +61,14 @@
       "var title=(document.title||'').replace(/ ?[-—|] ?知乎.*$/,'').trim();",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
       "if(!confirm('蒸馏这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字')){return;}",
-      "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:location.href,content:text})})",
+      "var fromStation=location.hash.indexOf('kd=1')>=0;",
+      "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:location.href.split('#')[0],content:text})})",
       ".then(function(r){return r.json()})",
-      ".then(function(d){alert(d.ok?('✓ 已进入知识蒸馏站（'+text.length+' 字）'):('失败：'+((d.error&&d.error.message)||'未知错误')))});",
+      ".then(function(d){",
+      "if(!d.ok){alert('失败：'+((d.error&&d.error.message)||'未知错误'));return;}",
+      "if(fromStation){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){location.href='" + origin + "/';}},400);}",
+      "else{alert('✓ 已进入知识蒸馏站（'+text.length+' 字）');}",
+      "});",
       "})();",
     ].join("");
   }
@@ -177,7 +182,7 @@
     const m = item.metrics || {};
     const author = item.Author && item.Author.Name ? item.Author.Name : "";
     const initial = author ? author.slice(0, 1) : "·";
-    const dKey = String(item.Url || "").split("?")[0];
+    const dKey = String(item.Url || "").split("?")[0].split("#")[0];
     const dist = distilledMap[dKey];
     const badgeHtml = dist
       ? `<button class="distill-badge" data-distill="${escapeHtml(dKey)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`
@@ -630,7 +635,9 @@
   let watch = null;               // {key, title, timer, deadline}
 
   function goDistill(key, url, title) {
-    window.open(url, "_blank", "noopener");
+    // 加来源标记：书签在那页蒸完会自动关标签/跳回，用户无需手动切回
+    const marked = url.indexOf("#") >= 0 ? url : url + "#kd=1";
+    window.open(marked, "_blank", "noopener");
     startWatch(key, title);
   }
 

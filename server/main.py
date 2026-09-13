@@ -305,7 +305,7 @@ async def ingest(request: Request):
         return {"ok": False, "error": {"code": "TOO_SHORT", "message": "内容过短，可能不是文章页。"}}
     if len(content) > DISTILL_MAX_CHARS:
         return {"ok": False, "error": {"code": "TOO_LONG", "message": "内容过长。"}}
-    key = url.split("?")[0]
+    key = url.split("?")[0].split("#")[0]
     distilled_store[key] = {"title": title, "url": url, "content": content, "at": int(time.time())}
     return {"ok": True, "length": len(content), "total": len(distilled_store)}
 
@@ -325,7 +325,7 @@ async def distilled_index():
 @app.get("/api/distilled/content")
 async def distilled_content(url: str):
     """读取某篇已蒸馏文章的全文"""
-    key = url.split("?")[0]
+    key = url.split("?")[0].split("#")[0]
     item = distilled_store.get(key)
     if not item:
         return {"ok": False, "error": {"code": "NOT_FOUND", "message": "这篇还没有全文，试试书签工具。"}}
