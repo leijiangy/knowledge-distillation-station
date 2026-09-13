@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """知识蒸馏站 —— FastAPI 应用入口与路由（对照官方 Node 模板的接口形态）"""
+import asyncio
 import time
 from pathlib import Path
 
@@ -222,6 +223,56 @@ async def collections(request: Request, favlist: str | None = None, force: int =
         return {"ok": True, "cached": False, **payload}
     except zhihu.ZhihuError as exc:
         return {"ok": False, "error": {"code": str(exc.code), "message": exc.message}}
+
+
+@app.post("/api/article_meta")
+async def article_meta(request: Request):
+    """批量补充文章作者信息（头像/认证徽章/权威度/签名）——用标题搜索匹配，服务端缓存 1 天。
+
+    前端按页批量调用（懒加载），单次最多 12 条，串行 + 温和限速。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    items = (body.get("items") or [])[:12]
+    meta_map = {}
+    for item in items:
+        url = str(item.get("url") or "")
+        title = str(item.get("title") or "")
+        if not url:
+            continue
+        key = "meta:" + url
+        cached = content_cache.get(key)
+        if cached is not None:
+            meta_map[url] = cached
+            continue
+        if not title:
+            meta_map[url] = None
+            continue
+        try:
+            found = await zhihu.search_zhihu(title, count=3)
+        except zhihu.ZhihuError:
+            meta_map[url] = None
+            continue
+        base = url.split("?")[0]
+        match = next((r for r in found if str(r.get("Url", "")).split("?")[0] == base), None)
+        if match is None and found:
+            match = found[0]
+        meta = None
+        if match:
+            meta = {
+                "author_name": match.get("AuthorName") or "",
+                "avatar": match.get("AuthorAvatar") or "",
+                "badge": match.get("AuthorBadge") or "",
+                "badge_text": match.get("AuthorBadgeText") or "",
+                "authority_level": match.get("AuthorityLevel"),
+                "signature": match.get("AuthorSignature") or "",
+            }
+            content_cache.set(key, meta)
+        meta_map[url] = meta
+        await asyncio.sleep(0.15)  # 温和限速，避免触发风控
+    return {"ok": True, "meta": meta_map}
 
 
 # 静态文件（前端单页）——挂在最后，避免吞掉 /api 与 /auth 路由

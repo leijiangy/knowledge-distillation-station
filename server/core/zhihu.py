@@ -70,6 +70,12 @@ async def fetch_favlists(oauth_token: str | None = None, limit: int = 50) -> lis
     return data.get("Items", [])
 
 
+async def search_zhihu(query: str, count: int = 3) -> list:
+    """知乎搜索（返回含 AuthorAvatar / AuthorBadge / AuthorityLevel / AuthorSignature / ContentText）"""
+    data = await user_api_get("/api/v1/content/zhihu_search", None, Query=query, Count=count)
+    return data.get("Items", []) or []
+
+
 async def fetch_favlist_contents(favlist_token: int | str, oauth_token: str | None = None,
                                  offset: int = 0, limit: int = 50) -> dict:
     return await user_api_get(

@@ -23,6 +23,13 @@
 
   const TYPE_NAMES = { answer: "回答", article: "文章", zvideo: "视频", pin: "想法", question: "问题" };
   const METRIC_NAMES = { approval: "认可度", richness: "信息量", credibility: "准确性" };
+  const AVATAR_COLORS = ["#dce8d5", "#dbe7ee", "#ece2cf", "#e4dced", "#d9e8e4", "#ecdfd8"];
+
+  function authorColor(name) {
+    let hash = 0;
+    for (const ch of String(name || "?")) hash = (hash * 31 + ch.charCodeAt(0)) % 997;
+    return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+  }
 
   // ---- 状态 ----
   let status = null;          // /api/oauth/status 的结果
@@ -107,17 +114,18 @@
   function cardHtml(item) {
     const m = item.metrics || {};
     const author = item.Author && item.Author.Name ? item.Author.Name : "";
+    const initial = author ? author.slice(0, 1) : "·";
+    const headline = (item.Author && item.Author.Headline) ? item.Author.Headline : "";
     const labels = ["approval", "richness", "credibility"].map((kind) => {
       const metric = m[kind] || {};
       const basis = (metric.basis || []).join(" · ");
       return `<span title="${escapeHtml(basis)}">${METRIC_NAMES[kind]}<b>${metric.score != null ? metric.score : 0}</b></span>`;
     }).join("");
     return `
-      <article class="card">
+      <article class="card" data-url="${escapeHtml(item.Url || "")}" data-title="${escapeHtml(item.Title || "")}">
         <a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>
         <div class="meta">
           <span class="tag">${TYPE_NAMES[item.ContentType] || item.ContentType || "内容"}</span>
-          ${author ? `<span>${escapeHtml(author)}</span>` : ""}
           <span>${formatDate(item.FavTime)}</span>
         </div>
         <div class="card-main">
@@ -125,6 +133,17 @@
           <div class="card-radar">
             ${radarSvg(m)}
             <div class="radar-labels">${labels}</div>
+          </div>
+        </div>
+        <div class="card-author">
+          <span class="author-avatar" style="background:${authorColor(author)}">${escapeHtml(initial)}</span>
+          <div class="author-info">
+            <div class="author-line">
+              <b class="author-name">${escapeHtml(author || "未知作者")}</b>
+              <img class="author-badge" alt="" hidden>
+              <span class="author-badge-text" hidden></span>
+            </div>
+            <div class="author-headline">${escapeHtml(headline)}</div>
           </div>
         </div>
         <div class="foot">依据：收藏 ${item.FavoriteCount || 0} · 赞同 ${item.LikeCount || 0} · 评论 ${item.CommentCount || 0}</div>
@@ -151,6 +170,79 @@
     const start = (page - 1) * PAGE_SIZE;
     els.cards.innerHTML = sorted.slice(start, start + PAGE_SIZE).map(cardHtml).join("");
     renderPager();
+    observeCards();
+  }
+
+  // ---- 作者信息懒加载：卡片进入视口时才批量请求头像/徽章/签名（服务端有 1 天缓存） ----
+  let metaObserver = null;
+  let metaQueue = [];
+  let metaTimer = null;
+
+  function observeCards() {
+    if (!("IntersectionObserver" in window)) return;  // 不支持则保持字母头像
+    if (!metaObserver) {
+      metaObserver = new IntersectionObserver((entries) => {
+        const visible = entries.filter((e) => e.isIntersecting).map((e) => e.target);
+        for (const card of visible) {
+          metaObserver.unobserve(card);
+          metaQueue.push(card);
+        }
+        if (visible.length) scheduleFlush();
+      }, { rootMargin: "300px 0px" });
+    }
+    els.cards.querySelectorAll(".card[data-url]").forEach((card) => metaObserver.observe(card));
+  }
+
+  function scheduleFlush() {
+    if (metaTimer) clearTimeout(metaTimer);
+    metaTimer = setTimeout(flushMeta, 150);
+  }
+
+  async function flushMeta() {
+    const batch = metaQueue.splice(0, 12);
+    if (!batch.length) return;
+    try {
+      const data = await api("/api/article_meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: batch.map((card) => ({
+            url: card.getAttribute("data-url"),
+            title: card.getAttribute("data-title"),
+          })),
+        }),
+      });
+      if (data.ok && data.meta) {
+        for (const card of batch) {
+          const meta = data.meta[card.getAttribute("data-url")];
+          if (meta) applyMeta(card, meta);
+        }
+      }
+    } catch (err) {
+      // 静默失败：保留字母头像，不影响卡片
+    }
+    if (metaQueue.length) scheduleFlush();
+  }
+
+  function applyMeta(card, meta) {
+    const avatar = card.querySelector(".author-avatar");
+    if (avatar && meta.avatar) {
+      avatar.innerHTML = `<img src="${escapeHtml(meta.avatar)}" alt="" loading="lazy" referrerpolicy="no-referrer">`;
+    }
+    const badge = card.querySelector(".author-badge");
+    if (badge && meta.badge) {
+      badge.src = meta.badge;
+      badge.hidden = false;
+    }
+    const badgeText = card.querySelector(".author-badge-text");
+    if (badgeText && meta.badge_text) {
+      badgeText.textContent = meta.badge_text;
+      badgeText.hidden = false;
+    }
+    const headline = card.querySelector(".author-headline");
+    if (headline && !headline.textContent.trim() && meta.signature) {
+      headline.textContent = meta.signature;
+    }
   }
 
   // 页码序列（超过 5 页时折叠中间部分为省略号）
