@@ -153,9 +153,9 @@
     renderPager();
   }
 
-  // 页码序列（超过 7 页时折叠中间部分）
+  // 页码序列（超过 5 页时折叠中间部分为省略号）
   function pageNumbers(total, current) {
-    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
     const set = new Set([1, total, current - 1, current, current + 1]);
     const nums = [...set].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
     const out = [];
@@ -172,9 +172,10 @@
     const total = totalPages();
     if (total <= 1) { els.pager.hidden = true; return; }
     els.pager.hidden = false;
+    closePagerPop();
     let html = `<button class="pager-btn" data-go="prev" ${page === 1 ? "disabled" : ""} aria-label="上一页">‹</button>`;
     for (const n of pageNumbers(total, page)) {
-      if (n === "gap") html += `<span class="pager-gap">…</span>`;
+      if (n === "gap") html += `<button class="pager-btn pager-more" aria-label="选择页码" title="选择页码">…</button>`;
       else html += `<button class="pager-btn${n === page ? " active" : ""}" data-page="${n}">${n}</button>`;
     }
     html += `<button class="pager-btn" data-go="next" ${page === total ? "disabled" : ""} aria-label="下一页">›</button>`;
@@ -186,6 +187,39 @@
     const next = els.pager.querySelector('[data-go="next"]');
     if (prev) prev.addEventListener("click", () => goPage(page - 1));
     if (next) next.addEventListener("click", () => goPage(page + 1));
+    const more = els.pager.querySelector(".pager-more");
+    if (more) {
+      more.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (els.pager.querySelector(".pager-pop")) { closePagerPop(); return; }
+        openPagerPop();
+      });
+    }
+  }
+
+  // 省略号浮层：窗口内小面板，手动选页
+  function openPagerPop() {
+    const total = totalPages();
+    const pop = document.createElement("div");
+    pop.className = "pager-pop";
+    pop.innerHTML = Array.from({ length: total }, (_, i) => i + 1).map((n) =>
+      `<button class="pop-page${n === page ? " active" : ""}" data-pop="${n}">${n}</button>`
+    ).join("");
+    pop.addEventListener("click", (event) => event.stopPropagation());
+    pop.querySelectorAll("[data-pop]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        goPage(Number(btn.getAttribute("data-pop")));
+        closePagerPop();
+      });
+    });
+    els.pager.appendChild(pop);
+    setTimeout(() => document.addEventListener("click", closePagerPop), 0);
+  }
+
+  function closePagerPop() {
+    const pop = els.pager.querySelector(".pager-pop");
+    if (pop) pop.remove();
+    document.removeEventListener("click", closePagerPop);
   }
 
   function goPage(target) {
