@@ -1,4 +1,4 @@
-# 凭证与密钥（绝不入库：Access Secret / token 都放这里）
+﻿# 凭证与密钥（绝不入库：Access Secret / token 都放这里）
 .env
 .env.*
 *.key
@@ -20,3 +20,7 @@ build/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# 运行时文件
+*.log
+cookie.txt
