@@ -529,14 +529,13 @@ async def reading_open(request: Request):
         cuts = ai.normalize_cuts(result.get("cuts"), len(content))
         summary = result.get("summary") or ""
         await reading_store.save_article(key, summary, cuts, uid)
-        plan = {"summary": summary, "cuts": cuts, "degraded": bool(result.get("degraded"))}
+        plan = {"summary": summary, "cuts": cuts}
     cuts = plan.get("cuts") or []
     summary = plan.get("summary") or ""
     payload, total = await _segment_payload(item, key, summary, cuts, 0, uid)
     await reading_store.append_event(key, uid, "open", 0, None)
     return {"ok": True,
-            "article": {"key": key, "title": item["title"], "summary": summary,
-                        "total": total, "degraded": bool(plan.get("degraded"))},
+            "article": {"key": key, "title": item["title"], "summary": summary, "total": total},
             "segment": payload}
 
 

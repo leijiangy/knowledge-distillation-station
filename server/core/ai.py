@@ -15,8 +15,6 @@ from .config import settings
 
 _TIMEOUT = 180.0
 _MODEL = "deepseek-chat"
-# 语义划分的长度上限：超过则降级为按长度切分（避免超上下文）
-_SEGMENT_MAX_CHARS = 30000
 
 
 class AIError(Exception):
@@ -24,7 +22,10 @@ class AIError(Exception):
 
 
 def _extract_json(raw: str) -> dict:
-    """从模型输出中提取 JSON 对象（兼容 markdown 代码块围栏与前后说明文字）"""
+    """从模型输出中提取 JSON 对象（兼容 markdown 代码块围栏与前后说明文字）。
+
+    解析失败时抛错，错误信息包含模型原始输出片段（便于定位）。
+    """
     text = (raw or "").strip()
     if text.startswith("```"):
         text = re.sub(r"^```[a-zA-Z0-9]*\s*", "", text)
@@ -40,7 +41,7 @@ def _extract_json(raw: str) -> dict:
                 return data
         except json.JSONDecodeError:
             continue
-    raise AIError("无法从模型输出中解析 JSON：" + text[:160].replace("\n", " "))
+    raise AIError("模型输出不是合法 JSON，原始输出：" + text[:400].replace("\n", " "))
 
 
 async def _chat(messages: list, temperature: float = 0.3, max_tokens: int = 2400,
@@ -108,13 +109,10 @@ def split_segments(content: str, cuts: list) -> list:
 
 
 async def segment_article(title: str, content: str, max_chars: int = 1200) -> dict:
-    """把全文划分为适合逐段精读的小段。返回 {summary, cuts, degraded}（切点为字符位置）。
+    """把全文划分为适合逐段精读的小段。返回 {summary, cuts}（切点为字符位置）。
 
-    解析失败自动重试一次；仍失败或文章过长时降级为按长度切分（degraded=True）。
+    解析失败直接抛错（错误信息带模型原始输出），不做静默降级——先定位问题。
     """
-    if len(content) > _SEGMENT_MAX_CHARS:
-        print(f"[ai] 全文 {len(content)} 字符超过语义划分上限，降级按长度切分")
-        return {"summary": "", "cuts": [], "degraded": True}
     prompt = (
         "把下面这篇知乎内容划分为适合逐段精读的小段，并给出全文主旨。\n\n"
         "硬性要求：\n"
@@ -126,28 +124,14 @@ async def segment_article(title: str, content: str, max_chars: int = 1200) -> di
         '只返回 JSON：{"summary": "一句全文主旨", "cuts": [整数数组]}\n\n'
         f"标题：{title}\n\n正文：\n{content}"
     )
-    messages = [{"role": "system", "content": "你是严谨的中文阅读教练，只输出要求的 JSON。"},
-                {"role": "user", "content": prompt}]
-    raw = await _chat(messages, temperature=0.2, max_tokens=3000, json_mode=True)
-    try:
-        data = _extract_json(raw)
-    except AIError:
-        # 重试一次：把上次输出回喂，明确要求只输出 JSON 本身
-        retry = messages + [
-            {"role": "assistant", "content": raw[:2000]},
-            {"role": "user", "content": "上面的输出不是合法 JSON。请只输出 JSON 对象本身"
-                                        '（形如 {"summary": "...", "cuts": [...]}），'
-                                        "不要代码块标记、不要任何其他文字。"},
-        ]
-        raw = await _chat(retry, temperature=0.1, max_tokens=3000, json_mode=True)
-        try:
-            data = _extract_json(raw)
-        except AIError as exc:
-            print(f"[ai] 划分解析失败，降级按长度切分。{exc}")
-            return {"summary": "", "cuts": [], "degraded": True}
+    raw = await _chat(
+        [{"role": "system", "content": "你是严谨的中文阅读教练，只输出要求的 JSON。"},
+         {"role": "user", "content": prompt}],
+        temperature=0.2, max_tokens=3000, json_mode=True,
+    )
+    data = _extract_json(raw)
     return {"summary": str(data.get("summary") or "").strip(),
-            "cuts": data.get("cuts") or [],
-            "degraded": bool(data.get("degraded"))}
+            "cuts": data.get("cuts") or []}
 
 
 _EXPLAIN_SYSTEM = "你是一位耐心、克制的中文精读教练。你的解释要准确、平实、不夸张。"
