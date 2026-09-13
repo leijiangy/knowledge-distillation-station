@@ -22,9 +22,9 @@ class AIError(Exception):
 
 
 def _extract_json(raw: str) -> dict:
-    """从模型输出中提取 JSON 对象（兼容 markdown 代码块围栏与前后说明文字）。
+    """从模型输出中提取 JSON 对象（兼容 markdown 围栏、前后说明文字、尾部多余内容）。
 
-    解析失败时抛错，错误信息包含模型原始输出片段（便于定位）。
+    解析失败时抛错，错误信息包含总长度与首尾片段（便于定位）。
     """
     text = (raw or "").strip()
     if text.startswith("```"):
@@ -41,7 +41,19 @@ def _extract_json(raw: str) -> dict:
                 return data
         except json.JSONDecodeError:
             continue
-    raise AIError("模型输出不是合法 JSON，原始输出：" + text[:400].replace("\n", " "))
+    # 从第一个 { 起解析"第一个完整的 JSON 对象"（容忍尾部多余的说明文字）
+    idx = text.find("{")
+    if idx >= 0:
+        try:
+            data, _end = json.JSONDecoder().raw_decode(text[idx:])
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+    raise AIError(
+        f"模型输出不是合法 JSON（共 {len(text)} 字符）。"
+        f"开头：{text[:200]} ｜ 结尾：{text[-200:]}"
+    )
 
 
 async def _chat(messages: list, temperature: float = 0.3, max_tokens: int = 2400,
@@ -108,30 +120,71 @@ def split_segments(content: str, cuts: list) -> list:
     return [content[bounds[i]:bounds[i + 1]] for i in range(len(bounds) - 1)]
 
 
+def _paragraph_spans(content: str) -> list:
+    """按换行切自然段，返回 [(start, end), ...]（每个自然段不含换行符）"""
+    return [(m.start(), m.end()) for m in re.finditer(r"[^\n]+", content)]
+
+
+def _compose_cuts(paras: list, prefer_ends: set, total_len: int, max_chars: int) -> list:
+    """把自然段组合成段并输出字符切点。
+
+    - 硬约束：每段不超过 max_chars（在自然段边界切）
+    - 软偏好：模型给出的语义边界（长度过半时提前切）
+    """
+    cuts = []
+    start = 0
+    for i, (para_start, para_end) in enumerate(paras):
+        seg_len = para_end - start
+        over_limit = seg_len >= max_chars
+        preferred = i in prefer_ends and seg_len >= max_chars * 0.5
+        if over_limit or preferred:
+            if 0 < para_end < total_len:
+                cuts.append(para_end)
+            start = para_end
+    return cuts
+
+
 async def segment_article(title: str, content: str, max_chars: int = 1200) -> dict:
     """把全文划分为适合逐段精读的小段。返回 {summary, cuts}（切点为字符位置）。
 
-    解析失败直接抛错（错误信息带模型原始输出），不做静默降级——先定位问题。
+    实现要点：把自然段编号后交给模型做「语义分组」（它擅长的），字符位置由后端
+    精确计算——模型不擅长数数，直接输出字符偏移会幻觉性跑偏。
     """
+    paras = _paragraph_spans(content)
+    if len(paras) <= 1:
+        return {"summary": "", "cuts": []}
+    listing = "\n".join(f"[{i}] {content[s:e]}" for i, (s, e) in enumerate(paras))
     prompt = (
-        "把下面这篇知乎内容划分为适合逐段精读的小段，并给出全文主旨。\n\n"
-        "硬性要求：\n"
-        "1. 只输出切点，不改写原文，不引用原文句子\n"
-        f"2. 切点优先落在自然段/小节的边界上；每段尽量不超过 {max_chars} 字\n"
-        "3. cuts 是切点的字符位置数组（相对全文的 0-based 字符索引，从 0 数起），"
-        "不含 0、不含全文长度；[c1,c2,...] 表示分段为 [0,c1)、[c1,c2)、…、[cN,末)\n"
-        "4. 切点严格递增、不重复\n\n"
-        '只返回 JSON：{"summary": "一句全文主旨", "cuts": [整数数组]}\n\n'
-        f"标题：{title}\n\n正文：\n{content}"
+        "下面是一篇知乎文章的全文，已按自然段编号（[0]、[1]、…）。\n\n"
+        "请把它划分为适合逐段精读的小段，并给出全文主旨。\n\n"
+        "划分规则：\n"
+        "- 一段是一个完整的意思单元，通常由多个自然段组成，目标是读者一次读完能理解\n"
+        "- 参考粒度：3000 字的文章通常切成 3~6 段\n"
+        "- 只允许在自然段之间划分，不要在自然段内部切\n"
+        "- 不要切得太碎（不要把每个自然段单独成段）\n\n"
+        "只返回 JSON："
+        '{"summary": "一句全文主旨", "breaks": [结束自然段的编号数组]}\n\n'
+        '例如 "breaks": [2, 5] 表示：第 1 段 = 自然段 0~2，第 2 段 = 自然段 3~5，'
+        "第 3 段 = 自然段 6 到末尾。\n"
+        "breaks 从小到大、不重复、不包含最后一个自然段的编号。\n\n"
+        f"标题：{title}\n\n正文：\n{listing}"
     )
     raw = await _chat(
         [{"role": "system", "content": "你是严谨的中文阅读教练，只输出要求的 JSON。"},
          {"role": "user", "content": prompt}],
-        temperature=0.2, max_tokens=3000, json_mode=True,
+        temperature=0.2, max_tokens=2000, json_mode=True,
     )
     data = _extract_json(raw)
-    return {"summary": str(data.get("summary") or "").strip(),
-            "cuts": data.get("cuts") or []}
+    prefer_ends = set()
+    for value in data.get("breaks") or []:
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= n < len(paras) - 1:
+            prefer_ends.add(n)
+    cuts = _compose_cuts(paras, prefer_ends, len(content), max_chars)
+    return {"summary": str(data.get("summary") or "").strip(), "cuts": cuts}
 
 
 _EXPLAIN_SYSTEM = "你是一位耐心、克制的中文精读教练。你的解释要准确、平实、不夸张。"
