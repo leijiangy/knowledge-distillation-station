@@ -126,9 +126,10 @@
     ));
   }
 
-  // 卡片配图改用知乎 CDN 小缩略图（约 5KB/张，列表快速加载）
-  function thumbCover(url) {
-    return String(url || "").replace(/_\d+w\.(jpe?g|png|webp|gif)$/i, "_250x0.$1");
+  // 卡片配图用知乎 CDN 缩略图：small = 250x0（小方图）、big = 720w（全宽/半宽图）
+  function thumbCover(url, size) {
+    const suffix = size === "big" ? "_720w" : "_250x0";
+    return String(url || "").replace(/_\d+w\.(jpe?g|png|webp|gif)$/i, suffix + ".$1");
   }
 
   function formatDate(unixSeconds) {
@@ -207,9 +208,10 @@
     const thumbHtml = distImgs.length === 1
       ? `<img class="card-thumb" src="${escapeHtml(thumbCover(distImgs[0]))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
       : "";
-    const galleryHtml = distImgs.length >= 2
-      ? `<div class="card-gallery">${distImgs.slice(0, 3).map((u) =>
-          `<img src="${escapeHtml(thumbCover(u))}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join("")}</div>`
+    const galleryImgs = distImgs.slice(0, 3);
+    const galleryHtml = galleryImgs.length >= 2
+      ? `<div class="card-gallery n${galleryImgs.length}">${galleryImgs.map((u) =>
+          `<img src="${escapeHtml(thumbCover(u, "big"))}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join("")}</div>`
       : "";
     const badgeHtml = dist
       ? `<button class="distill-badge" data-distill="${escapeHtml(dKey)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`

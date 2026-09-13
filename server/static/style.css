@@ -294,10 +294,10 @@ body {
   flex: 0 0 84px; width: 84px; height: 84px; object-fit: cover;
   border-radius: 4px; border: 1px solid var(--line); background: #eef3ea;
 }
-/* 多图：摘要下方一排（最多三张，等宽） */
+/* 多图：摘要下方，等宽等高并排（最多三张，参照知乎想法） */
 .card-gallery { display: flex; gap: 8px; margin-top: 12px; }
 .card-gallery img {
-  flex: 1 1 0; min-width: 0; height: 84px; object-fit: cover;
+  flex: 1 1 0; min-width: 0; height: 100px; object-fit: cover;
   border-radius: 4px; border: 1px solid var(--line); background: #eef3ea;
 }
 
