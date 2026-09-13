@@ -85,18 +85,21 @@ async def create_node(article_key: str, seg_index: int, kind: str, content: str,
     return rows[0] if isinstance(rows, list) and rows else None
 
 
-async def find_overlap(article_key: str, seg_index: int, pos_start: int, pos_end: int) -> list:
-    """与给定区间重叠的共享解释（段内不重叠约束）"""
+async def find_overlap(article_key: str, seg_index: int, pos_start: int, pos_end: int,
+                       parent_id: int | None = None) -> list:
+    """与给定区间重叠的**同层**共享解释。
+
+    不重叠约束作用于同一父层之内；父子之间允许嵌套（在某一层里再划选生成子层）。
+    """
     _check_config()
-    resp = await _get_client().get(
-        f"{_REST}/reading_nodes",
-        params={
-            "article_key": f"eq.{article_key}", "seg_index": f"eq.{seg_index}",
-            "kind": "eq.explain",
-            "pos_start": f"lt.{pos_end}", "pos_end": f"gt.{pos_start}",
-            "select": "id,pos_start,pos_end",
-        },
-    )
+    params = {
+        "article_key": f"eq.{article_key}", "seg_index": f"eq.{seg_index}",
+        "kind": "eq.explain",
+        "pos_start": f"lt.{pos_end}", "pos_end": f"gt.{pos_start}",
+        "select": "id,pos_start,pos_end",
+        "parent_id": "is.null" if parent_id is None else f"eq.{parent_id}",
+    }
+    resp = await _get_client().get(f"{_REST}/reading_nodes", params=params)
     resp.raise_for_status()
     return resp.json()
 

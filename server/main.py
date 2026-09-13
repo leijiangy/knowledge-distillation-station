@@ -583,7 +583,9 @@ async def reading_selection(request: Request):
         return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
     if not (0 <= pos_start < pos_end <= len(seg_text)):
         return {"ok": False, "error": {"code": "BAD_RANGE", "message": "选区范围不合法。"}}
-    overlap = await reading_store.find_overlap(key, seg, pos_start, pos_end)
+    parent_id = body.get("parent_id")
+    parent_id = int(parent_id) if parent_id is not None else None
+    overlap = await reading_store.find_overlap(key, seg, pos_start, pos_end, parent_id)
     if overlap:
         return {"ok": False, "error": {"code": "OVERLAP", "message": "这段文字已经有解释了。"}}
     try:
@@ -592,6 +594,7 @@ async def reading_selection(request: Request):
     except ai.AIError as exc:
         return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
     node = await reading_store.create_node(key, seg, "explain", text, uid,
+                                           parent_id=parent_id,
                                            pos_start=pos_start, pos_end=pos_end)
     if node is None:
         return {"ok": False, "error": {"code": "CONFLICT", "message": "该处已有解释。"}}

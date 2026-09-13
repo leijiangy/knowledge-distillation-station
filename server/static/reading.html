@@ -406,24 +406,36 @@
         const offsets = selectionOffsets($("rd-text"));
         const tab = state.tabs[state.tabs.length - 1];
         if (!question && !offsets) { $("rd-ask-error").textContent = "先划选一段文字，或输入你的问题。"; return; }
+        // 层内选区：把「层内偏移」换算回「段内偏移」（嵌套节点锚定在原文上）
+        let posStart = null, posEnd = null;
+        if (offsets) {
+          let base = 0;
+          if (tab && !tab.isRoot && tab.nodeId) {
+            const parent = findNode(tab.nodeId);
+            if (parent && parent.pos_start != null) base = parent.pos_start;
+          }
+          posStart = base + offsets.start;
+          posEnd = base + offsets.end;
+        }
         $("rd-ask-error").textContent = "";
         $("rd-ask").disabled = true; $("rd-ask").textContent = "生成中…";
         try {
-          if (offsets && !question) {
-            // 纯选中 = 共享解释
+          if (posStart != null && !question) {
+            // 纯选中 = 共享解释（层内选中时锚定为该层的子节点）
+            const body = { url: state.url, seg: state.seg.index,
+                           pos_start: posStart, pos_end: posEnd };
+            if (tab && !tab.isRoot && tab.nodeId) body.parent_id = tab.nodeId;
             const data = await api("/api/reading/selection", {
               method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ url: state.url, seg: state.seg.index,
-                                     pos_start: offsets.start, pos_end: offsets.end }),
+              body: JSON.stringify(body),
             });
             state.segNodes.push(data.node);
-            tab.marks = segMarks(state.segNodes);
-            renderActiveTab();
+            refreshMarks(tab);
             window.getSelection().removeAllRanges();
           } else {
             // 有输入 = 私有提问（锚定选区或当前层）
             const body = { url: state.url, seg: state.seg.index, question };
-            if (offsets) { body.pos_start = offsets.start; body.pos_end = offsets.end; }
+            if (posStart != null) { body.pos_start = posStart; body.pos_end = posEnd; }
             else if (tab && !tab.isRoot && tab.nodeId) { body.parent_id = tab.nodeId; }
             const data = await api("/api/reading/ask", {
               method: "POST", headers: { "Content-Type": "application/json" },
@@ -431,7 +443,7 @@
             });
             state.segNodes.push(data.node);
             if (tab.isRoot) { renderQa(state.segNodes); }
-            if (offsets) { tab.marks = segMarks(state.segNodes); renderActiveTab(); }
+            if (posStart != null) { refreshMarks(tab); }
             $("rd-question").value = "";
             window.getSelection().removeAllRanges();
           }
@@ -440,6 +452,23 @@
         } finally {
           $("rd-ask").disabled = false; $("rd-ask").textContent = "提问";
         }
+      }
+
+      // 标记刷新：根层用段内标记；层内用该节点的子标记（子节点偏移是段内的，需相对父节点换算）
+      function refreshMarks(tab) {
+        const root = state.tabs[0];
+        if (root) root.marks = segMarks(state.segNodes);
+        if (tab && !tab.isRoot && tab.nodeId) {
+          const parent = findNode(tab.nodeId);
+          if (parent) {
+            tab.marks = childMarks(parent).map((m) => ({
+              id: m.id, kind: m.kind,
+              start: m.start - (parent.pos_start || 0),
+              end: m.end - (parent.pos_start || 0),
+            }));
+          }
+        }
+        renderActiveTab();
       }
 
       async function deleteNode(nodeId) {
