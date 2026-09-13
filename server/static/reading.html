@@ -325,8 +325,8 @@
         container.querySelectorAll(".mk").forEach((el) => {
           el.addEventListener("click", () => {
             const id = Number(el.getAttribute("data-node"));
-            if (el.getAttribute("data-ask") === "1") { scrollToAsk(id); }
-            else { openExplainTab(id); }
+            if (!id) return;
+            openExplainTab(id);   // 实线（共享解释）与虚线（私有提问）统一：点击即进入该层
           });
         });
       }
