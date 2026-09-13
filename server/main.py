@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """知识蒸馏站 —— FastAPI 应用入口与路由（对照官方 Node 模板的接口形态）"""
 import asyncio
+import re
 import time
 from pathlib import Path
 
@@ -343,6 +344,100 @@ async def distilled_content(url: str):
     return {"ok": True, "title": item["title"], "url": item["url"],
             "content": item["content"], "images": item.get("images") or [],
             "length": len(item["content"]), "at": item["at"]}
+
+
+# ---- 智能推荐：基于收藏画像搜索同主题公共内容（v1） ----
+RECOMMEND_BATCH = 12
+
+
+def _content_type_of(url: str) -> str:
+    if "/answer/" in url:
+        return "answer"
+    if "/zvideo/" in url:
+        return "zvideo"
+    if "/pin/" in url:
+        return "pin"
+    if "/p/" in url:
+        return "article"
+    if "/question/" in url:
+        return "question"
+    return "content"
+
+
+async def _build_recommend_pool(session, token) -> list:
+    """画像 = 收藏里综合分最高的几篇标题；用标题去知乎搜索同主题内容，排除已收藏/已蒸馏。
+
+    多个主题的结果交错合并，避免前几条全被同一个主题占据。
+    """
+    fav_payload = user_cache.get(user_key("collections:first", _user_key_id(session))) or {}
+    fav_items = fav_payload.get("items") or []
+    owned = {str(it.get("Url") or "").split("?")[0].split("#")[0] for it in fav_items}
+    seeds = sorted(fav_items, key=lambda it: it.get("combined_score") or 0, reverse=True)[:3]
+    seeds = [str(it.get("Title") or "").strip() for it in seeds if str(it.get("Title") or "").strip()]
+    if not seeds:
+        seeds = ["如何高效学习", "认知科学"]
+    seen = set(owned) | set(distilled_store.keys())
+    groups: list = []
+    for seed in seeds:
+        try:
+            found = await zhihu.search_zhihu(seed, count=8)
+        except zhihu.ZhihuError:
+            continue
+        group = []
+        for row in found:
+            url = str(row.get("Url") or "")
+            key = url.split("?")[0].split("#")[0]
+            if not url or key in seen:
+                continue
+            seen.add(key)
+            raw_title = str(row.get("Title") or "")
+            group.append({
+                "Title": re.sub(r"\s*[-—|]\s*知乎\s*$", "", raw_title).strip() or raw_title,
+                "Url": url,
+                "ContentText": (row.get("ContentText") or "")[:400],
+                "AuthorName": row.get("AuthorName") or "",
+                "AuthorAvatar": row.get("AuthorAvatar") or "",
+                "AuthorBadge": row.get("AuthorBadge") or "",
+                "AuthorSignature": row.get("AuthorSignature") or "",
+                "ContentType": _content_type_of(url),
+                "seed": seed,
+            })
+        if group:
+            groups.append(group)
+        await asyncio.sleep(0.15)  # 温和限速，避免触发风控
+    pool: list = []
+    for i in range(max((len(g) for g in groups), default=0)):
+        for group in groups:
+            if i < len(group):
+                pool.append(group[i])
+    return pool
+
+
+@app.get("/api/recommend")
+async def recommend(request: Request, batch: int = 0, force: int = 0):
+    """智能推荐（v1）：基于你的收藏画像，从知乎搜索里挑同主题的公共内容。"""
+    session = _current_session(request)
+    token, login_error = _resolve_token(session)
+    if login_error:
+        return {"ok": False, "error": login_error}
+    cache_key = user_key("recommend_pool", _user_key_id(session))
+    pool = None if force else user_cache.get(cache_key)
+    if pool is None:
+        try:
+            pool = await _build_recommend_pool(session, token)
+        except Exception:
+            pool = []
+        if pool:
+            user_cache.set(cache_key, pool)
+    total = len(pool)
+    if total == 0:
+        return {"ok": True, "items": [], "total": 0, "batch": 0,
+                "message": "暂时没能取到推荐内容，稍后再试。"}
+    start = (batch * RECOMMEND_BATCH) % total
+    items = pool[start:start + RECOMMEND_BATCH]
+    if len(items) < RECOMMEND_BATCH and total > len(items):
+        items += pool[:min(RECOMMEND_BATCH - len(items), total)]
+    return {"ok": True, "items": items, "total": total, "batch": batch}
 
 
 # 静态文件（前端单页）——挂在最后，避免吞掉 /api 与 /auth 路由

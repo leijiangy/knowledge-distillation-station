@@ -43,6 +43,13 @@
             </div>
           </div>
 
+          <button class="nav-item nav-parent" id="nav-recommend">
+            <span class="left">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.3 7.2 18.9l.9-5.4L4.2 9.7l5.4-.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+              智能推荐
+            </span>
+          </button>
+
           <a class="nav-item" href="#" id="nav-history">
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="12,7.5 12,12 15,13.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             学习记录
@@ -139,6 +146,38 @@
         </div>
 
         <nav class="pager" id="pager" hidden aria-label="分页"></nav>
+      </section>
+
+      <!-- 视图三：智能推荐（基于收藏画像的公共学习内容） -->
+      <section class="view" id="view-recommend" hidden>
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <button class="sidebar-toggle" id="reco-expand" title="展开侧边栏" aria-label="展开侧边栏">
+              <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="11,6 17,12 11,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <h2>智能推荐 <span class="count" id="recommend-count"></span></h2>
+          </div>
+          <div class="toolbar-right">
+            <span class="reco-seed-hint" id="reco-seed-hint" hidden></span>
+            <button class="btn-ghost" id="recommend-refresh">换一批</button>
+          </div>
+        </div>
+
+        <div class="cards" id="recommend-cards"></div>
+
+        <div class="state-box" id="reco-loading" hidden>
+          <div class="spinner"></div>
+          <p>正在根据你的收藏挑选内容……</p>
+        </div>
+        <div class="state-box" id="reco-error" hidden>
+          <span class="state-icon">⚠️</span>
+          <p id="reco-error-text"></p>
+          <button class="btn-primary" id="reco-retry">重试</button>
+        </div>
+        <div class="state-box" id="reco-empty" hidden>
+          <span class="state-icon">🗒️</span>
+          <p id="reco-empty-text">暂时没有推荐内容。</p>
+        </div>
       </section>
     </main>
   </div>

@@ -7,7 +7,12 @@
     page: $("page"),
     sidebarToggle: $("sidebar-toggle"), sidebarExpand: $("sidebar-expand"),
     favGroup: $("fav-group"), favParent: $("fav-parent"), favSub: $("fav-sub"),
-    navHome: $("nav-home"), navHistory: $("nav-history"),
+    navHome: $("nav-home"), navHistory: $("nav-history"), navRecommend: $("nav-recommend"),
+    viewRecommend: $("view-recommend"), recommendCards: $("recommend-cards"),
+    recommendCount: $("recommend-count"), recommendRefresh: $("recommend-refresh"),
+    recoSeedHint: $("reco-seed-hint"), recoExpand: $("reco-expand"),
+    recoLoading: $("reco-loading"), recoError: $("reco-error"), recoErrorText: $("reco-error-text"),
+    recoEmpty: $("reco-empty"), recoEmptyText: $("reco-empty-text"), recoRetry: $("reco-retry"),
     viewHome: $("view-home"), viewCollections: $("view-collections"),
     homeGotoCollections: $("home-goto-collections"),
     homeBookmarklet: $("home-bookmarklet"), homeBookmarkletCode: $("home-bookmarklet-code"),
@@ -94,11 +99,12 @@
 
   // ---- 视图切换：首页 / 我的收藏 ----
   function showView(name) {
-    const isHome = name === "home";
-    if (els.viewHome) els.viewHome.hidden = !isHome;
-    if (els.viewCollections) els.viewCollections.hidden = isHome;
-    if (els.navHome) els.navHome.classList.toggle("current", isHome);
-    if (els.favParent) els.favParent.classList.toggle("current", !isHome);
+    if (els.viewHome) els.viewHome.hidden = name !== "home";
+    if (els.viewCollections) els.viewCollections.hidden = name !== "collections";
+    if (els.viewRecommend) els.viewRecommend.hidden = name !== "recommend";
+    if (els.navHome) els.navHome.classList.toggle("current", name === "home");
+    if (els.favParent) els.favParent.classList.toggle("current", name === "collections");
+    if (els.navRecommend) els.navRecommend.classList.toggle("current", name === "recommend");
   }
 
   function openModal(el) { if (el) el.hidden = false; }
@@ -263,18 +269,29 @@
     return Math.max(1, Math.ceil(allItems.length / PAGE_SIZE));
   }
 
-  function renderCards() {
-    const sorted = sortItems();
-    const start = (page - 1) * PAGE_SIZE;
-    els.cards.innerHTML = sorted.slice(start, start + PAGE_SIZE).map(cardHtml).join("");
-    els.cards.querySelectorAll("[data-distill]").forEach((btn) => {
+  function bindCardActions(container) {
+    container.querySelectorAll("[data-distill]").forEach((btn) => {
       btn.addEventListener("click", () => openFulltext(btn.getAttribute("data-distill"), btn.getAttribute("data-title")));
     });
-    els.cards.querySelectorAll("[data-godistill]").forEach((btn) => {
+    container.querySelectorAll("[data-godistill]").forEach((btn) => {
       btn.addEventListener("click", () => {
         goDistill(btn.getAttribute("data-godistill"), btn.getAttribute("data-gourl"), btn.getAttribute("data-gotitle"));
       });
     });
+  }
+
+  async function refreshDistilled() {
+    try {
+      const data = await api("/api/distilled");
+      distilledMap = data.ok ? (data.items || {}) : {};
+    } catch (err) { /* 保留现有索引 */ }
+  }
+
+  function renderCards() {
+    const sorted = sortItems();
+    const start = (page - 1) * PAGE_SIZE;
+    els.cards.innerHTML = sorted.slice(start, start + PAGE_SIZE).map(cardHtml).join("");
+    bindCardActions(els.cards);
     renderPager();
     observeCards();
   }
@@ -507,12 +524,7 @@
       allItems = data.items || [];
       page = 1;
       // 拉取"已蒸馏"索引（书签送进来的全文标记）
-      try {
-        const dist = await api("/api/distilled");
-        distilledMap = dist.ok ? (dist.items || {}) : {};
-      } catch (err) {
-        distilledMap = {};
-      }
+      await refreshDistilled();
       const meta = data.favlist || {};
       if (meta.UrlToken != null) currentToken = String(meta.UrlToken);
       els.favlistTitle.innerHTML = `${escapeHtml(meta.Title || "我的收藏")} <span class="count" id="count-badge">${data.count} 条</span>`;
@@ -576,6 +588,104 @@
     await loadCollections(null, false);
   }
 
+  // ---- 智能推荐：基于收藏画像的公共学习内容 ----
+  let recommendItems = [];
+  let recommendBatch = 0;
+  let recommendLoaded = false;
+
+  function recommendCardHtml(item) {
+    const key = String(item.Url || "").split("?")[0].split("#")[0];
+    const dist = distilledMap[key];
+    const author = item.AuthorName || "";
+    const initial = author ? author.slice(0, 1) : "·";
+    const badge = item.AuthorBadge
+      ? `<img class="author-badge" src="${escapeHtml(item.AuthorBadge)}" alt="">`
+      : "";
+    const actionHtml = dist
+      ? `<button class="distill-badge" data-distill="${escapeHtml(key)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`
+      : `<button class="go-distill" data-godistill="${escapeHtml(key)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}">🧪 去蒸馏全文</button>`;
+    return `
+      <article class="card" data-url="${escapeHtml(item.Url || "")}" data-title="${escapeHtml(item.Title || "")}">
+        <a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>
+        <div class="meta">
+          <span class="tag">${TYPE_NAMES[item.ContentType] || item.ContentType || "内容"}</span>
+          <span class="meta-author">
+            <span class="author-avatar" style="background:${authorColor(author)}">${escapeHtml(initial)}</span>
+            <b class="author-name">${escapeHtml(author || "未知作者")}</b>
+            ${badge}
+          </span>
+        </div>
+        <p class="summary">${escapeHtml(item.ContentText || "")}</p>
+        ${actionHtml}
+        <div class="foot">同主题推荐 · 来自你收藏的《${escapeHtml(String(item.seed || "").slice(0, 24))}》</div>
+      </article>`;
+  }
+
+  function renderRecommendCards() {
+    if (!els.recommendCards) return;
+    els.recommendCards.innerHTML = recommendItems.map(recommendCardHtml).join("");
+    bindCardActions(els.recommendCards);
+  }
+
+  function setRecoState(name) {
+    for (const key of ["recoLoading", "recoError", "recoEmpty"]) {
+      if (els[key]) els[key].hidden = key !== "reco" + name;
+    }
+    if (name && els.recommendCards) els.recommendCards.innerHTML = "";
+  }
+
+  async function loadRecommend(batch, force) {
+    if (!els.viewRecommend) return;
+    const nextBatch = batch == null ? recommendBatch : batch;
+    setRecoState("Loading");
+    try {
+      await refreshDistilled();
+      const query = [];
+      if (nextBatch) query.push("batch=" + nextBatch);
+      if (force) query.push("force=1");
+      const data = await api("/api/recommend" + (query.length ? "?" + query.join("&") : ""));
+      if (!data.ok) {
+        const error = new Error((data.error && data.error.message) || "推荐加载失败");
+        error.code = data.error && data.error.code;
+        throw error;
+      }
+      recommendItems = data.items || [];
+      recommendBatch = nextBatch;
+      recommendLoaded = true;
+      if (els.recommendCount) els.recommendCount.textContent = data.total ? `共 ${data.total} 条` : "";
+      if (els.recoSeedHint) {
+        const seed = recommendItems[0] && recommendItems[0].seed;
+        els.recoSeedHint.hidden = !seed;
+        els.recoSeedHint.textContent = seed ? `根据你收藏的《${String(seed).slice(0, 18)}》等主题` : "";
+      }
+      if (!recommendItems.length) {
+        setRecoState("Empty");
+        if (els.recoEmptyText) els.recoEmptyText.textContent = data.message || "暂时没有推荐内容。";
+        return;
+      }
+      setRecoState(null);
+      renderRecommendCards();
+    } catch (err) {
+      if (err.code === "LOGIN_REQUIRED") { showHome(); return; }
+      setRecoState("Error");
+      if (els.recoErrorText) els.recoErrorText.textContent = err.message || "出了点问题，请重试。";
+    }
+  }
+
+  // 已蒸馏索引变化时，刷新当前可见视图（收藏 / 推荐）
+  async function checkDistilledUpdates() {
+    try {
+      const data = await api("/api/distilled");
+      const items = data.ok ? (data.items || {}) : null;
+      if (!items) return;
+      if (Object.keys(items).join("|") !== Object.keys(distilledMap).join("|")) {
+        distilledMap = items;
+        if (els.viewCollections && !els.viewCollections.hidden) renderCards();
+        if (els.viewRecommend && !els.viewRecommend.hidden) renderRecommendCards();
+      }
+    } catch (err) { /* 静默 */ }
+  }
+
   // ---- 事件 ----
   els.sidebarToggle.addEventListener("click", () => els.page.classList.add("sidebar-collapsed"));
   els.sidebarExpand.addEventListener("click", () => els.page.classList.remove("sidebar-collapsed"));
@@ -600,6 +710,23 @@
 
   // 首页 / 收藏视图切换
   els.navHome.addEventListener("click", () => showHome());
+
+  // 智能推荐：进入即加载；「换一批」循环切片；重试走 force
+  if (els.navRecommend) {
+    els.navRecommend.addEventListener("click", () => {
+      showView("recommend");
+      if (!recommendLoaded) loadRecommend(0, false);
+    });
+  }
+  if (els.recommendRefresh) {
+    els.recommendRefresh.addEventListener("click", () => loadRecommend(recommendBatch + 1, false));
+  }
+  if (els.recoRetry) {
+    els.recoRetry.addEventListener("click", () => loadRecommend(recommendBatch, true));
+  }
+  if (els.recoExpand) {
+    els.recoExpand.addEventListener("click", () => els.page.classList.remove("sidebar-collapsed"));
+  }
   if (els.homeGotoCollections) {
     els.homeGotoCollections.addEventListener("click", () => showView("collections"));
   }
@@ -688,6 +815,7 @@
         stopWatch();
         showGuide("success", title, length);
         if (els.viewCollections && !els.viewCollections.hidden) renderCards();
+        if (els.viewRecommend && !els.viewRecommend.hidden) renderRecommendCards();
         return;
       }
     } catch (err) { /* 网络抖动：下一轮再试 */ }
@@ -733,16 +861,7 @@
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState !== "visible") return;
     if (watch) { checkWatch(); return; }
-    if (!els.viewCollections || els.viewCollections.hidden || !allItems.length) return;
-    try {
-      const data = await api("/api/distilled");
-      const items = data.ok ? (data.items || {}) : null;
-      if (!items) return;
-      if (Object.keys(items).join("|") !== Object.keys(distilledMap).join("|")) {
-        distilledMap = items;
-        renderCards();
-      }
-    } catch (err) { /* 静默 */ }
+    await checkDistilledUpdates();
   });
 
   // 开发调试入口（本地预览用）

@@ -376,6 +376,9 @@ body {
 .manual summary { cursor: pointer; color: var(--green); }
 .manual textarea { margin-top: 10px; }
 
+/* ---- 智能推荐 ---- */
+.reco-seed-hint { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+
 /* ---- 状态盒 ---- */
 .state-box {
   display: flex; flex-direction: column; align-items: center; gap: 14px;
