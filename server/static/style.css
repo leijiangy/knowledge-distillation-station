@@ -288,6 +288,12 @@ body {
   font-size: 14px; color: var(--ink); border-top: 1px dashed var(--line); padding-top: 14px;
 }
 
+/* ---- 卡片配图（已蒸馏文章的首图，贴卡片顶部） ---- */
+.card-cover {
+  display: block; width: calc(100% + 36px); height: 96px; object-fit: cover;
+  margin: -16px -18px 12px; border-radius: 3px 3px 0 0; background: #eef3ea;
+}
+
 /* ---- 已蒸馏徽章（卡片内） ---- */
 .distill-badge {
   display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;

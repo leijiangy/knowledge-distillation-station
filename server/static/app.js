@@ -61,11 +61,21 @@
       "if(confirm((isZhihu?'这个知乎页面不是回答或文章，':'当前不是知乎页面，')+'是否前往知识蒸馏站？')){window.open('" + origin + "/','_blank');}",
       "return;}",
       "var text=(el.innerText||'').trim();",
-      "var title=(document.title||'').replace(/ ?[-—|] ?知乎.*$/,'').trim();",
+      "var title=(document.title||'').replace(/^(\\([^)]*\\)\\s*)+/,'').replace(/ ?[-—|] ?知乎.*$/,'').trim();",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
-      "if(!confirm('蒸馏这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字')){return;}",
+      "var imgs=[];var list=el.querySelectorAll('img');",
+      "for(var i=0;i<list.length&&imgs.length<9;i++){",
+      "var im=list[i];var cls=String(im.className||'');",
+      "if(/avatar|emoji|icon|badge|logo|symbol|sticker/i.test(cls))continue;",
+      "var s=im.currentSrc||im.getAttribute('src')||im.getAttribute('data-original')||im.getAttribute('data-actualsrc')||'';",
+      "if(!s||s.indexOf('zhimg.com')<0)continue;",
+      "if(im.naturalWidth&&im.naturalWidth<200)continue;",
+      "s=s.split('?')[0];",
+      "if(imgs.indexOf(s)<0)imgs.push(s);",
+      "}",
+      "if(!confirm('蒸馏这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
       "var fromStation=location.hash.indexOf('kd=1')>=0;",
-      "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:location.href.split('#')[0],content:text})})",
+      "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:location.href.split('#')[0],content:text,images:imgs})})",
       ".then(function(r){return r.json()})",
       ".then(function(d){",
       "if(!d.ok){alert('失败：'+((d.error&&d.error.message)||'未知错误'));return;}",
@@ -114,6 +124,11 @@
     return String(text == null ? "" : text).replace(/[&<>"']/g, (ch) => (
       { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
     ));
+  }
+
+  // 卡片封面改用知乎 CDN 缩略图（1440w → 720w，约省一半流量）
+  function thumbCover(url) {
+    return String(url || "").replace(/_\d+w\.(jpe?g|png|webp|gif)$/i, "_720w.$1");
   }
 
   function formatDate(unixSeconds) {
@@ -187,6 +202,9 @@
     const initial = author ? author.slice(0, 1) : "·";
     const dKey = String(item.Url || "").split("?")[0].split("#")[0];
     const dist = distilledMap[dKey];
+    const coverHtml = dist && dist.cover
+      ? `<img class="card-cover" src="${escapeHtml(thumbCover(dist.cover))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+      : "";
     const badgeHtml = dist
       ? `<button class="distill-badge" data-distill="${escapeHtml(dKey)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`
       : `<button class="go-distill" data-godistill="${escapeHtml(dKey)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}">🧪 去蒸馏全文</button>`;
@@ -197,6 +215,7 @@
     }).join("");
     return `
       <article class="card" data-url="${escapeHtml(item.Url || "")}" data-title="${escapeHtml(item.Title || "")}">
+        ${coverHtml}
         <a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>
         <div class="meta">
           <span class="tag">${TYPE_NAMES[item.ContentType] || item.ContentType || "内容"}</span>

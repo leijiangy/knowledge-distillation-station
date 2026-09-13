@@ -299,15 +299,24 @@ async def ingest(request: Request):
     url = str(body.get("url") or "").strip()
     title = str(body.get("title") or "").strip()[:200]
     content = str(body.get("content") or "").strip()
+    images = body.get("images") or []
     if not url or "zhihu.com" not in url:
         return {"ok": False, "error": {"code": "BAD_URL", "message": "需要知乎内容链接。"}}
     if len(content) < 100:
         return {"ok": False, "error": {"code": "TOO_SHORT", "message": "内容过短，可能不是文章页。"}}
     if len(content) > DISTILL_MAX_CHARS:
         return {"ok": False, "error": {"code": "TOO_LONG", "message": "内容过长。"}}
+    clean_images: list = []
+    if isinstance(images, list):
+        for item in images[:9]:
+            s = str(item or "").strip()
+            if s.startswith("http") and len(s) <= 500 and s not in clean_images:
+                clean_images.append(s)
     key = url.split("?")[0].split("#")[0]
-    distilled_store[key] = {"title": title, "url": url, "content": content, "at": int(time.time())}
-    return {"ok": True, "length": len(content), "total": len(distilled_store)}
+    distilled_store[key] = {"title": title, "url": url, "content": content,
+                            "images": clean_images, "at": int(time.time())}
+    return {"ok": True, "length": len(content), "images": len(clean_images),
+            "total": len(distilled_store)}
 
 
 @app.get("/api/distilled")
@@ -316,7 +325,8 @@ async def distilled_index():
     return {
         "ok": True,
         "items": {
-            k: {"title": v["title"], "length": len(v["content"]), "at": v["at"]}
+            k: {"title": v["title"], "length": len(v["content"]), "at": v["at"],
+                "cover": (v.get("images") or [None])[0]}
             for k, v in distilled_store.items()
         },
     }
@@ -330,7 +340,8 @@ async def distilled_content(url: str):
     if not item:
         return {"ok": False, "error": {"code": "NOT_FOUND", "message": "这篇还没有全文，试试书签工具。"}}
     return {"ok": True, "title": item["title"], "url": item["url"],
-            "content": item["content"], "length": len(item["content"]), "at": item["at"]}
+            "content": item["content"], "images": item.get("images") or [],
+            "length": len(item["content"]), "at": item["at"]}
 
 
 # 静态文件（前端单页）——挂在最后，避免吞掉 /api 与 /auth 路由
