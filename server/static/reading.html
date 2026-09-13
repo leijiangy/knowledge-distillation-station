@@ -227,14 +227,16 @@
         return pre.toString().length;
       }
 
-      // 落在已有标记内部时贴到最近边界（避免提交必然被"重叠"拒绝）
-      function clampToMarks(pos, marks) {
+      // 把区间裁剪为「包含锚点、且未被已有标记覆盖」的最大连续区间（避开标记，避免重叠被拒）
+      function freeRange(range, marks, pos) {
+        let a = range.start;
+        let b = range.end;
         for (const m of marks) {
-          if (pos > m.start && pos < m.end) {
-            return (pos - m.start <= m.end - pos) ? m.start : m.end;
-          }
+          if (m.end <= pos) a = Math.max(a, m.end);
+          else if (m.start >= pos) b = Math.min(b, m.start);
+          else return null;               // 锚点落在既有标记内部：不产生选区
         }
-        return pos;
+        return a < b ? { start: a, end: b } : null;
       }
 
       // 单击：选中"该位置所在的整句"（宿主拦截按住拖动时的主交互方式）
@@ -279,9 +281,8 @@
             const text = scope === "explain" ? (tab.explain || "") : tab.text;
             const marks = scope === "explain" ? [] : (tab.marks || []);
             const r = sentenceRangeAt(text, off);
-            const a = clampToMarks(r.start, marks);
-            const b = clampToMarks(r.end, marks);
-            state.draft = a < b ? { start: a, end: b, scope } : null;
+            const free = freeRange(r, marks, off);
+            state.draft = free ? { start: free.start, end: free.end, scope } : null;
             renderActiveTab();
           });
         };
@@ -294,9 +295,9 @@
           if (!d) return;
           const tab = state.tabs[state.tabs.length - 1];
           const marks = d.scope === "explain" ? [] : ((tab && tab.marks) || []);
-          const a = clampToMarks(Math.min(d.start, d.end), marks);
-          const b = clampToMarks(Math.max(d.start, d.end), marks);
-          state.draft = a < b ? { start: a, end: b, scope: d.scope } : null;
+          const anchor = Math.min(d.start, d.end);
+          const free = freeRange({ start: anchor, end: Math.max(d.start, d.end) }, marks, anchor);
+          state.draft = free ? { start: free.start, end: free.end, scope: d.scope } : null;
           renderActiveTab();
         });
       }
@@ -387,7 +388,10 @@
         }
         renderText($("rd-explain-body"), explainText, explainMarks);
         const del = $("rd-del");
-        if (del) del.onclick = () => deleteNode(tab.nodeId);
+        if (del) {
+          del.hidden = Boolean(tab.isRoot);   // 初始解释固定不变，不提供删除
+          del.onclick = () => deleteNode(tab.nodeId);
+        }
         $("rd-done").textContent = tab.isRoot
           ? (state.seg.index + 1 >= state.article.total ? "读完了 →" : "我懂了 →")
           : "收起这一层 ←";
@@ -560,6 +564,7 @@
             state.segNodes.push(data.node);
             refreshMarks(tab);
             window.getSelection().removeAllRanges();
+            openExplainTab(data.node.id);   // 生成后立刻打开该解释层，让用户看到内容
           } else {
             // 有输入 = 私有提问（锚定选区或当前层）
             const body = { url: state.url, seg: state.seg.index, question };
