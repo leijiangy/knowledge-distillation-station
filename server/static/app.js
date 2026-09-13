@@ -11,7 +11,8 @@
     viewHome: $("view-home"), viewCollections: $("view-collections"),
     homeLoginBtn: $("home-login-btn"), homeGotoCollections: $("home-goto-collections"),
     homeBookmarklet: $("home-bookmarklet"), homeBookmarkletCode: $("home-bookmarklet-code"),
-    homeCopyBookmarklet: $("home-copy-bookmarklet"),
+    homeCopyBookmarklet: $("home-copy-bookmarklet"), homeCopyBookmark: $("home-copy-bookmark"),
+    copyBookmarkHint: $("copy-bookmark-hint"),
     userBlock: $("user-block"), userAvatar: $("user-avatar"), userName: $("user-name"), userSub: $("user-sub"),
     favlistTitle: $("favlist-title"), countBadge: $("count-badge"), loadedBadge: $("loaded-badge"),
     sortSelect: $("sort-select"), refreshBtn: $("refresh-btn"),
@@ -566,8 +567,36 @@
     els.homeLoginBtn.addEventListener("click", () => { location.href = "/api/oauth/start"; });
   }
 
-  // 蒸馏书签：初始化与复制
+  // 蒸馏书签：初始化 / 复制书签（富文本，可粘贴成书签）/ 复制代码
   initBookmarklet();
+
+  async function copyBookmarkAsLink() {
+    const code = buildBookmarklet();
+    const html = '<a href="' + escapeHtml(code) + '">🧪 蒸馏这篇文章</a>';
+    const hint = els.copyBookmarkHint;
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([code], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(code);
+      }
+      if (hint) hint.textContent = "现在右键浏览器书签栏 →「粘贴」";
+      if (els.homeCopyBookmark) {
+        els.homeCopyBookmark.textContent = "已复制 ✓";
+        setTimeout(() => { els.homeCopyBookmark.textContent = "📋 复制书签"; }, 2500);
+      }
+    } catch (err) {
+      if (hint) hint.textContent = "复制失败，请展开下方「手动添加」复制代码";
+    }
+  }
+
+  if (els.homeCopyBookmark) els.homeCopyBookmark.addEventListener("click", copyBookmarkAsLink);
+
   if (els.homeCopyBookmarklet) {
     els.homeCopyBookmarklet.addEventListener("click", async () => {
       try {
