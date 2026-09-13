@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from core.config import settings
 from core.sessions import sessions
 from core.cache import content_cache, user_cache, user_key
-from core import analyze, oauth, store, zhihu
+from core import ai, analyze, oauth, reading_store, store, zhihu
 
 app = FastAPI(title=settings.PROJECT_NAME, docs_url=None, redoc_url=None)
 
@@ -333,6 +333,11 @@ async def ingest(request: Request):
             if s.startswith("http") and len(s) <= 500 and s not in clean_images:
                 clean_images.append(s)
     key = _norm_key(url)
+    existing = await store.get(key)
+    if existing is not None:
+        # 内容不随重复蒸馏变化（学习会话的位置锚定依赖全文稳定）：已存在直接返回
+        return {"ok": True, "existed": True, "length": len(existing["content"]),
+                "images": len(existing.get("images") or []), "total": await store.count()}
     await store.upsert(key, title, url, content, clean_images)
     return {"ok": True, "length": len(content), "images": len(clean_images),
             "total": await store.count()}
@@ -448,6 +453,236 @@ async def recommend(request: Request, batch: int = 0, force: int = 0):
     if len(items) < RECOMMEND_BATCH and total > len(items):
         items += pool[:min(RECOMMEND_BATCH - len(items), total)]
     return {"ok": True, "items": items, "total": total, "batch": batch}
+
+
+# ---- 学习会话（逐段精读，设计见 docs/学习会话设计-定稿.md） ----
+
+def _segment_by_cuts(content: str, cuts: list, index: int):
+    """按切点取第 index 段；返回 (段文本 or None, 总段数)"""
+    bounds = [0] + list(cuts or []) + [len(content)]
+    total = max(0, len(bounds) - 1)
+    if index < 0 or index >= total:
+        return None, total
+    return content[bounds[index]:bounds[index + 1]], total
+
+
+async def _reading_context(request: Request, url: str):
+    """会话公共前置：登录校验 + 归一化 key + 取全文。返回 (item, key, uid, error)"""
+    session = _current_session(request)
+    _token, login_error = _resolve_token(session)
+    if login_error:
+        return None, None, None, login_error
+    key = _norm_key(url)
+    item = await store.get(key)
+    if not item:
+        return None, key, None, {"code": "NOT_DISTILLED", "message": "这篇还没有全文，先用书签蒸馏。"}
+    return item, key, _user_key_id(session), None
+
+
+async def _ensure_init_explain(item: dict, key: str, seg_index: int, seg_text: str,
+                               summary: str, uid: str):
+    """初始解释：有则取，无则生成（按段懒生成）"""
+    node = await reading_store.get_init(key, seg_index)
+    if node:
+        return node
+    try:
+        text = await ai.explain_segment(item["title"], summary, seg_text)
+    except ai.AIError:
+        return None
+    return await reading_store.create_node(key, seg_index, "init", text, uid)
+
+
+async def _segment_payload(item: dict, key: str, summary: str, cuts: list,
+                           index: int, uid: str):
+    seg_text, total = _segment_by_cuts(item["content"], cuts, index)
+    if seg_text is None:
+        return None, total
+    init_node = await _ensure_init_explain(item, key, index, seg_text, summary, uid)
+    nodes = await reading_store.list_segment_nodes(key, index, uid)
+    return {
+        "index": index,
+        "total": total,
+        "text": seg_text,
+        "explain": (init_node or {}).get("content", ""),
+        "explain_id": (init_node or {}).get("id"),
+        "nodes": nodes,
+    }, total
+
+
+@app.post("/api/reading/open")
+async def reading_open(request: Request):
+    """打开阅读会话：无划分则生成划分与全文主旨，返回第 0 段"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    if error:
+        return {"ok": False, "error": error}
+    content = item["content"]
+    plan = await reading_store.get_article(key)
+    if not plan:
+        try:
+            result = await ai.segment_article(item["title"], content)
+        except ai.AIError as exc:
+            return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
+        cuts = ai.normalize_cuts(result.get("cuts"), len(content))
+        summary = result.get("summary") or ""
+        await reading_store.save_article(key, summary, cuts, uid)
+        plan = {"summary": summary, "cuts": cuts}
+    cuts = plan.get("cuts") or []
+    summary = plan.get("summary") or ""
+    payload, total = await _segment_payload(item, key, summary, cuts, 0, uid)
+    await reading_store.append_event(key, uid, "open", 0, None)
+    return {"ok": True,
+            "article": {"key": key, "title": item["title"], "summary": summary, "total": total},
+            "segment": payload}
+
+
+@app.get("/api/reading/segment")
+async def reading_segment(request: Request, url: str, seg: int = 0):
+    """进入某一段：返回段文本、初始解释（可懒生成）与该段可见节点"""
+    item, key, uid, error = await _reading_context(request, url)
+    if error:
+        return {"ok": False, "error": error}
+    plan = await reading_store.get_article(key)
+    if not plan:
+        return {"ok": False, "error": {"code": "NOT_OPENED", "message": "这个阅读会话还没开始。"}}
+    cuts = plan.get("cuts") or []
+    summary = plan.get("summary") or ""
+    payload, total = await _segment_payload(item, key, summary, cuts, seg, uid)
+    if payload is None:
+        return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
+    await reading_store.append_event(key, uid, "open", seg, None)
+    return {"ok": True,
+            "article": {"key": key, "title": item["title"], "summary": summary, "total": total},
+            "segment": payload}
+
+
+@app.post("/api/reading/selection")
+async def reading_selection(request: Request):
+    """提交选区（纯选中）：生成共享解释，段内区间不重叠"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    if error:
+        return {"ok": False, "error": error}
+    try:
+        seg = int(body.get("seg") or 0)
+        pos_start = int(body.get("pos_start"))
+        pos_end = int(body.get("pos_end"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": {"code": "BAD_RANGE", "message": "选区参数不合法。"}}
+    plan = await reading_store.get_article(key)
+    if not plan:
+        return {"ok": False, "error": {"code": "NOT_OPENED", "message": "这个阅读会话还没开始。"}}
+    seg_text, _total = _segment_by_cuts(item["content"], plan.get("cuts") or [], seg)
+    if seg_text is None:
+        return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
+    if not (0 <= pos_start < pos_end <= len(seg_text)):
+        return {"ok": False, "error": {"code": "BAD_RANGE", "message": "选区范围不合法。"}}
+    overlap = await reading_store.find_overlap(key, seg, pos_start, pos_end)
+    if overlap:
+        return {"ok": False, "error": {"code": "OVERLAP", "message": "这段文字已经有解释了。"}}
+    try:
+        text = await ai.explain_selection(item["title"], plan.get("summary") or "",
+                                          seg_text, seg_text[pos_start:pos_end])
+    except ai.AIError as exc:
+        return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
+    node = await reading_store.create_node(key, seg, "explain", text, uid,
+                                           pos_start=pos_start, pos_end=pos_end)
+    if node is None:
+        return {"ok": False, "error": {"code": "CONFLICT", "message": "该处已有解释。"}}
+    return {"ok": True, "node": node}
+
+
+@app.post("/api/reading/ask")
+async def reading_ask(request: Request):
+    """私有提问：可锚定选区或父节点（追问链通过 parent_id 嵌套）"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    question = str(body.get("question") or "").strip()
+    if not question:
+        return {"ok": False, "error": {"code": "EMPTY_QUESTION", "message": "请输入问题。"}}
+    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    if error:
+        return {"ok": False, "error": error}
+    try:
+        seg = int(body.get("seg") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": {"code": "BAD_RANGE", "message": "段落参数不合法。"}}
+    parent_id = body.get("parent_id")
+    pos_start = body.get("pos_start")
+    pos_end = body.get("pos_end")
+    plan = await reading_store.get_article(key)
+    if not plan:
+        return {"ok": False, "error": {"code": "NOT_OPENED", "message": "这个阅读会话还没开始。"}}
+    seg_text, _total = _segment_by_cuts(item["content"], plan.get("cuts") or [], seg)
+    if seg_text is None:
+        return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
+    anchor_text = ""
+    if isinstance(pos_start, int) and isinstance(pos_end, int) and 0 <= pos_start < pos_end <= len(seg_text):
+        anchor_text = seg_text[pos_start:pos_end]
+    else:
+        pos_start = pos_end = None
+        if parent_id is not None:
+            parent = await reading_store.get_node(int(parent_id))
+            if parent:
+                anchor_text = parent.get("question") or parent.get("content") or ""
+    try:
+        answer = await ai.answer_question(question, plan.get("summary") or "",
+                                          anchor_text, seg_text)
+    except ai.AIError as exc:
+        return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
+    node = await reading_store.create_node(key, seg, "ask", answer, uid,
+                                           parent_id=int(parent_id) if parent_id is not None else None,
+                                           pos_start=pos_start, pos_end=pos_end, question=question)
+    if node is None:
+        return {"ok": False, "error": {"code": "CONFLICT", "message": "保存失败，请重试。"}}
+    return {"ok": True, "node": node}
+
+
+@app.post("/api/reading/event")
+async def reading_event(request: Request):
+    """埋点：open / understood / deleted（只追加，不改变任何呈现）"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    event = str(body.get("event") or "")
+    if event not in ("open", "understood", "deleted"):
+        return {"ok": False, "error": {"code": "BAD_EVENT", "message": "未知事件。"}}
+    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    if error:
+        return {"ok": False, "error": error}
+    seg_index = body.get("seg_index")
+    node_id = body.get("node_id")
+    await reading_store.append_event(
+        key, uid, event,
+        int(seg_index) if isinstance(seg_index, int) else None,
+        int(node_id) if isinstance(node_id, int) else None,
+    )
+    return {"ok": True}
+
+
+@app.delete("/api/reading/node/{node_id}")
+async def reading_delete_node(request: Request, node_id: int, url: str = ""):
+    """删除解释/提问（含全部子层）：共享解释人人可删（自愈），私有提问仅本人可删"""
+    item, key, uid, error = await _reading_context(request, url)
+    if error:
+        return {"ok": False, "error": error}
+    node = await reading_store.get_node(node_id)
+    if not node:
+        return {"ok": False, "error": {"code": "NOT_FOUND", "message": "节点不存在。"}}
+    if node.get("kind") == "ask" and node.get("uid") != uid:
+        return {"ok": False, "error": {"code": "FORBIDDEN", "message": "只能删除自己的提问。"}}
+    deleted = await reading_store.delete_node_tree(node_id)
+    await reading_store.append_event(key, uid, "deleted", node.get("seg_index"), node_id)
+    return {"ok": True, "deleted": deleted}
 
 
 # 静态文件（前端单页）——挂在最后，避免吞掉 /api 与 /auth 路由

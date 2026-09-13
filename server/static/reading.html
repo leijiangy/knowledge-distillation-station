@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>精读 · 知识蒸馏站</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* 精读内测页（先验证后端链路与 AI 效果，正式界面另行实现） */
+    .r-wrap { width: 100%; max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+    .r-top { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .r-top a { color: var(--green); text-decoration: none; font-size: 13px; }
+    .r-top h1 { font-size: 19px; }
+    .r-top .r-progress { margin-left: auto; color: var(--ink-3); font-size: 13px; }
+    .r-card {
+      background-color: var(--paper); background-image: var(--noise);
+      border: 1px solid var(--line-card); border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(30,40,28,.07), 0 14px 34px -18px rgba(30,40,28,.28);
+      padding: 22px 24px;
+    }
+    .r-start p { margin-bottom: 10px; color: var(--ink-2); font-size: 14px; }
+    .r-start input {
+      width: min(560px, 100%); padding: 9px 12px; font-size: 13.5px; font-family: inherit;
+      border: 1px solid var(--line); border-radius: 8px; background: #fff;
+    }
+    .r-hint { color: var(--ink-3); font-size: 12.5px; margin-top: 10px; }
+    .r-summary { color: var(--ink-2); font-size: 13.5px; border-left: 3px solid var(--green); padding-left: 10px; margin-bottom: 16px; }
+    .r-cols { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }
+    @media (max-width: 900px) { .r-cols { grid-template-columns: 1fr; } }
+    .r-text {
+      font-size: 15px; line-height: 2.0; color: var(--ink);
+      white-space: pre-wrap; max-height: 56vh; overflow-y: auto;
+      border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; background: rgba(255,255,255,.6);
+    }
+    .r-side h4, .r-chat h4 { font-size: 13px; color: var(--ink-3); margin-bottom: 8px; font-weight: 700; }
+    .r-explain-body {
+      font-size: 14px; line-height: 1.9; color: var(--ink);
+      white-space: pre-wrap; border: 1px solid var(--line); border-radius: 8px;
+      padding: 14px 16px; background: rgba(47,122,61,.05); min-height: 90px;
+    }
+    .r-chat { margin-top: 18px; }
+    .r-qa { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+    .r-qa .q { font-size: 13.5px; font-weight: 700; }
+    .r-qa .a { font-size: 13.5px; color: var(--ink-2); white-space: pre-wrap; border-left: 3px solid var(--line-card); padding-left: 10px; }
+    .r-input-row { display: flex; gap: 8px; }
+    .r-input-row input {
+      flex: 1; padding: 9px 12px; font-size: 13.5px; font-family: inherit;
+      border: 1px solid var(--line); border-radius: 8px; background: #fff;
+    }
+    .r-nav { display: flex; gap: 10px; margin-top: 20px; }
+    .r-btn {
+      background: var(--green); color: #f6fbf3; border: none; cursor: pointer;
+      padding: 9px 20px; font-size: 13.5px; font-weight: 700; border-radius: 9px; font-family: inherit;
+    }
+    .r-btn:hover { background: var(--green-dark); }
+    .r-btn.ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--line); }
+    .r-btn.ghost:hover { color: var(--green); border-color: #c6d2bf; }
+    .r-btn:disabled { opacity: .45; cursor: default; }
+    .r-error { color: #a33; font-size: 13px; margin-top: 10px; white-space: pre-wrap; }
+    .r-loading { color: var(--ink-3); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="r-wrap">
+    <div class="r-top">
+      <a href="/">← 返回收藏列表</a>
+      <h1>精读内测</h1>
+      <span class="r-progress" id="r-progress"></span>
+    </div>
+
+    <div class="r-card r-start" id="r-start">
+      <p>粘贴一篇<b>已蒸馏</b>文章的知乎链接，开始逐段精读：</p>
+      <input id="r-url" placeholder="https://zhuanlan.zhihu.com/p/..." autocomplete="off">
+      <button class="r-btn" id="r-open" style="margin-left:8px">开始精读</button>
+      <div class="r-hint" id="r-start-hint">首次打开会现场划分段落（约 10~30 秒），之后缓存复用。</div>
+      <div class="r-error" id="r-start-error" hidden></div>
+    </div>
+
+    <div class="r-card" id="r-session" hidden>
+      <div class="r-summary" id="r-summary"></div>
+      <div class="r-cols">
+        <div>
+          <h4 style="font-size:13px;color:var(--ink-3);margin-bottom:8px;font-weight:700">本段原文</h4>
+          <article class="r-text" id="r-text"></article>
+        </div>
+        <aside class="r-side">
+          <h4>本段解释</h4>
+          <div class="r-explain-body" id="r-explain-body"></div>
+        </aside>
+      </div>
+
+      <div class="r-chat">
+        <h4>提问（仅自己可见）</h4>
+        <div class="r-qa" id="r-qa"></div>
+        <div class="r-input-row">
+          <input id="r-question" placeholder="针对这一段提出问题…" autocomplete="off">
+          <button class="r-btn" id="r-ask">提问</button>
+        </div>
+        <div class="r-error" id="r-ask-error" hidden></div>
+      </div>
+
+      <div class="r-nav">
+        <button class="r-btn ghost" id="r-prev">← 上一段</button>
+        <button class="r-btn" id="r-done">我懂了 →</button>
+        <span class="r-loading" id="r-nav-hint" hidden>生成中…</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+      const $ = (id) => document.getElementById(id);
+      const state = { url: "", seg: 0, total: 0 };
+
+      function show(el) { el.hidden = false; }
+      function hide(el) { el.hidden = true; }
+      function setError(el, msg) { el.textContent = msg || ""; el.hidden = !msg; }
+
+      async function api(path, options) {
+        const resp = await fetch(path, options);
+        const data = await resp.json().catch(() => ({}));
+        if (!data || (data.ok === false)) {
+          const msg = (data && data.error && data.error.message) || ("请求失败（HTTP " + resp.status + "）");
+          const err = new Error(msg);
+          err.code = data && data.error && data.error.code;
+          throw err;
+        }
+        return data;
+      }
+
+      function renderSegment(seg) {
+        state.seg = seg.index;
+        state.total = seg.total;
+        $("r-progress").textContent = "第 " + (seg.index + 1) + " / " + seg.total + " 段";
+        $("r-text").textContent = seg.text;
+        $("r-explain-body").textContent = seg.explain || "（本段解释生成失败，可刷新重试）";
+        const qa = $("r-qa");
+        qa.innerHTML = "";
+        (seg.nodes || []).filter((n) => n.kind === "ask").forEach((n) => {
+          const q = document.createElement("div");
+          q.className = "q"; q.textContent = "Q：" + (n.question || "");
+          const a = document.createElement("div");
+          a.className = "a"; a.textContent = n.content || "";
+          qa.appendChild(q); qa.appendChild(a);
+        });
+        $("r-prev").disabled = seg.index <= 0;
+        $("r-done").textContent = seg.index + 1 >= seg.total ? "读完，返回收藏夹 →" : "我懂了 →";
+      }
+
+      async function openArticle(url) {
+        setError($("r-start-error"), "");
+        $("r-open").disabled = true;
+        $("r-start-hint").textContent = "正在划分段落并生成第一段解释（约 10~30 秒）…";
+        try {
+          const data = await api("/api/reading/open", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url }),
+          });
+          state.url = url;
+          $("r-summary").textContent = data.article.summary ? "主旨：" + data.article.summary : "";
+          hide($("r-start")); show($("r-session"));
+          renderSegment(data.segment);
+          $("r-start-hint").textContent = "";
+        } catch (err) {
+          setError($("r-start-error"), err.message + (err.code === "NOT_DISTILLED" ? "（先在收藏列表里点「去蒸馏全文」）" : ""));
+          $("r-start-hint").textContent = "";
+        } finally {
+          $("r-open").disabled = false;
+        }
+      }
+
+      async function goSegment(n) {
+        if (n < 0 || (state.total && n >= state.total)) return;
+        $("r-nav-hint").hidden = false;
+        $("r-prev").disabled = $("r-done").disabled = true;
+        try {
+          const data = await api("/api/reading/segment?url=" + encodeURIComponent(state.url) + "&seg=" + n);
+          renderSegment(data.segment);
+        } catch (err) {
+          alert("进入段落失败：" + err.message);
+        } finally {
+          $("r-nav-hint").hidden = true;
+          $("r-prev").disabled = state.seg <= 0;
+          $("r-done").disabled = false;
+        }
+      }
+
+      async function ask() {
+        const question = $("r-question").value.trim();
+        if (!question) return;
+        setError($("r-ask-error"), "");
+        $("r-ask").disabled = true;
+        $("r-ask").textContent = "生成中…";
+        try {
+          const data = await api("/api/reading/ask", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: state.url, seg: state.seg, question }),
+          });
+          const qa = $("r-qa");
+          const q = document.createElement("div"); q.className = "q"; q.textContent = "Q：" + question;
+          const a = document.createElement("div"); a.className = "a"; a.textContent = data.node.content || "";
+          qa.appendChild(q); qa.appendChild(a);
+          $("r-question").value = "";
+        } catch (err) {
+          setError($("r-ask-error"), err.message);
+        } finally {
+          $("r-ask").disabled = false;
+          $("r-ask").textContent = "提问";
+        }
+      }
+
+      async function understood() {
+        if (state.total && state.seg + 1 >= state.total) {
+          location.href = "/";
+          return;
+        }
+        fetch("/api/reading/event", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: state.url, event: "understood", seg_index: state.seg }),
+        }).catch(() => {});
+        await goSegment(state.seg + 1);
+      }
+
+      $("r-open").addEventListener("click", () => {
+        const url = $("r-url").value.trim();
+        if (!url) { setError($("r-start-error"), "请先粘贴知乎链接。"); return; }
+        openArticle(url);
+      });
+      $("r-url").addEventListener("keydown", (e) => { if (e.key === "Enter") $("r-open").click(); });
+      $("r-ask").addEventListener("click", ask);
+      $("r-question").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
+      $("r-done").addEventListener("click", understood);
+      $("r-prev").addEventListener("click", () => goSegment(state.seg - 1));
+
+      const params = new URLSearchParams(location.search);
+      const preset = params.get("url");
+      if (preset) { $("r-url").value = preset; openArticle(preset); }
+    })();
+  </script>
+</body>
+</html>
