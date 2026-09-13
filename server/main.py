@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from core.config import settings
 from core.sessions import sessions
 from core.cache import content_cache, user_cache, user_key
-from core import analyze, oauth, zhihu
+from core import analyze, oauth, store, zhihu
 
 app = FastAPI(title=settings.PROJECT_NAME, docs_url=None, redoc_url=None)
 
@@ -285,9 +285,16 @@ async def article_meta(request: Request):
     return {"ok": True, "meta": meta_map}
 
 
-# ---- 书签小工具：全文接收与存储（演示阶段为内存存储，后续接 T9 持久化） ----
-distilled_store: dict = {}   # 内容 URL(去参) -> {title, url, content, at}
+# ---- 书签小工具：全文接收与存储（T9：CloudBase PostgreSQL，经 REST API 访问） ----
 DISTILL_MAX_CHARS = 200_000
+
+
+@app.on_event("startup")
+async def _startup():
+    try:
+        await store.init()
+    except Exception as exc:  # 配置缺失/网络不通时给出明确告警，但不阻塞其他功能
+        print(f"[store] 持久化层初始化失败：{exc}")
 
 
 @app.post("/api/ingest")
@@ -314,35 +321,26 @@ async def ingest(request: Request):
             if s.startswith("http") and len(s) <= 500 and s not in clean_images:
                 clean_images.append(s)
     key = url.split("?")[0].split("#")[0]
-    distilled_store[key] = {"title": title, "url": url, "content": content,
-                            "images": clean_images, "at": int(time.time())}
+    await store.upsert(key, title, url, content, clean_images)
     return {"ok": True, "length": len(content), "images": len(clean_images),
-            "total": len(distilled_store)}
+            "total": await store.count()}
 
 
 @app.get("/api/distilled")
 async def distilled_index():
     """已蒸馏内容索引（供列表打标：哪些收藏已有全文）"""
-    return {
-        "ok": True,
-        "items": {
-            k: {"title": v["title"], "length": len(v["content"]), "at": v["at"],
-                "images": v.get("images") or [],
-                "cover": (v.get("images") or [None])[0]}
-            for k, v in distilled_store.items()
-        },
-    }
+    return {"ok": True, "items": await store.index()}
 
 
 @app.get("/api/distilled/content")
 async def distilled_content(url: str):
     """读取某篇已蒸馏文章的全文"""
     key = url.split("?")[0].split("#")[0]
-    item = distilled_store.get(key)
+    item = await store.get(key)
     if not item:
         return {"ok": False, "error": {"code": "NOT_FOUND", "message": "这篇还没有全文，试试书签工具。"}}
     return {"ok": True, "title": item["title"], "url": item["url"],
-            "content": item["content"], "images": item.get("images") or [],
+            "content": item["content"], "images": item["images"],
             "length": len(item["content"]), "at": item["at"]}
 
 
@@ -376,7 +374,7 @@ async def _build_recommend_pool(session, token) -> list:
     seeds = [str(it.get("Title") or "").strip() for it in seeds if str(it.get("Title") or "").strip()]
     if not seeds:
         seeds = ["如何高效学习", "认知科学"]
-    seen = set(owned) | set(distilled_store.keys())
+    seen = set(owned) | await store.keys()
     groups: list = []
     for seed in seeds:
         try:

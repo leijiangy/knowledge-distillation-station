@@ -24,3 +24,6 @@ Thumbs.db
 # 运行时文件
 *.log
 cookie.txt
+
+# 运行时数据（T9：SQLite 持久化，含用户蒸馏内容）
+server/data/
