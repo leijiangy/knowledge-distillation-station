@@ -16,7 +16,10 @@
     stateError: $("state-error"), errorText: $("error-text"), retryBtn: $("retry-btn"),
     stateEmpty: $("state-empty"), emptyText: $("empty-text"),
     stateLogin: $("state-login"), loginText: $("login-text"), loginBtn: $("login-btn"),
+    pager: $("pager"),
   };
+
+  const PAGE_SIZE = 8;   // 每页卡片数
 
   const TYPE_NAMES = { answer: "回答", article: "文章", zvideo: "视频", pin: "想法", question: "问题" };
   const METRIC_NAMES = { approval: "认可度", richness: "信息量", credibility: "准确性" };
@@ -27,6 +30,7 @@
   let currentToken = null;    // 当前收藏夹 UrlToken
   let allItems = [];          // 当前收藏夹的全部条目
   let sortMode = "favtime";
+  let page = 1;               // 当前页码（客户端分页）
 
   // ---- 工具 ----
   function escapeHtml(text) {
@@ -58,7 +62,10 @@
     for (const key of ["stateLoading", "stateError", "stateEmpty", "stateLogin"]) {
       els[key].hidden = key !== "state" + name;
     }
-    if (name) els.cards.innerHTML = "";
+    if (name) {
+      els.cards.innerHTML = "";
+      els.pager.hidden = true;
+    }
   }
   function hideStates() { showState(null); }
 
@@ -135,8 +142,59 @@
     return [...allItems].sort(by[sortMode] || by.favtime);
   }
 
+  function totalPages() {
+    return Math.max(1, Math.ceil(allItems.length / PAGE_SIZE));
+  }
+
   function renderCards() {
-    els.cards.innerHTML = sortItems().map(cardHtml).join("");
+    const sorted = sortItems();
+    const start = (page - 1) * PAGE_SIZE;
+    els.cards.innerHTML = sorted.slice(start, start + PAGE_SIZE).map(cardHtml).join("");
+    renderPager();
+  }
+
+  // 页码序列（超过 7 页时折叠中间部分）
+  function pageNumbers(total, current) {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    const set = new Set([1, total, current - 1, current, current + 1]);
+    const nums = [...set].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+    const out = [];
+    let prev = 0;
+    for (const n of nums) {
+      if (n - prev > 1) out.push("gap");
+      out.push(n);
+      prev = n;
+    }
+    return out;
+  }
+
+  function renderPager() {
+    const total = totalPages();
+    if (total <= 1) { els.pager.hidden = true; return; }
+    els.pager.hidden = false;
+    let html = `<button class="pager-btn" data-go="prev" ${page === 1 ? "disabled" : ""} aria-label="上一页">‹</button>`;
+    for (const n of pageNumbers(total, page)) {
+      if (n === "gap") html += `<span class="pager-gap">…</span>`;
+      else html += `<button class="pager-btn${n === page ? " active" : ""}" data-page="${n}">${n}</button>`;
+    }
+    html += `<button class="pager-btn" data-go="next" ${page === total ? "disabled" : ""} aria-label="下一页">›</button>`;
+    els.pager.innerHTML = html;
+    els.pager.querySelectorAll("[data-page]").forEach((btn) => {
+      btn.addEventListener("click", () => goPage(Number(btn.getAttribute("data-page"))));
+    });
+    const prev = els.pager.querySelector('[data-go="prev"]');
+    const next = els.pager.querySelector('[data-go="next"]');
+    if (prev) prev.addEventListener("click", () => goPage(page - 1));
+    if (next) next.addEventListener("click", () => goPage(page + 1));
+  }
+
+  function goPage(target) {
+    const total = totalPages();
+    const nextPage = Math.min(Math.max(1, target), total);
+    if (nextPage === page) return;
+    page = nextPage;
+    renderCards();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   // ---- 渲染：侧边栏 ----
@@ -216,6 +274,7 @@
         throw error;
       }
       allItems = data.items || [];
+      page = 1;
       const meta = data.favlist || {};
       if (meta.UrlToken != null) currentToken = String(meta.UrlToken);
       els.favlistTitle.innerHTML = `${escapeHtml(meta.Title || "我的收藏")} <span class="count" id="count-badge">${data.count} 条</span>`;
@@ -290,6 +349,7 @@
   els.favParent.addEventListener("click", () => els.favGroup.classList.toggle("open"));
   els.sortSelect.addEventListener("change", () => {
     sortMode = els.sortSelect.value;
+    page = 1;
     renderCards();
   });
   els.refreshBtn.addEventListener("click", () => loadCollections(null, true));
