@@ -60,6 +60,7 @@
     .mk-shared { border-bottom: 2px solid var(--green); background: rgba(47,122,61,.06); }
     .mk-private { border-bottom: 2px dashed var(--gold); background: rgba(183,134,40,.05); }
     .mk-active { background: rgba(47,122,61,.16); }
+    .mk-draft { background: rgba(47, 122, 61, .22); }
 
     /* 底部对话 + 导航（常驻：滚动时钉在视口底部） */
     .rd-bottom {
@@ -164,6 +165,7 @@
         tabs: [],         // 层级标签：[{nodeId, label, text, marks, explain, isRoot}]
         rootMarks: [],    // 本段的标记（回到根层时用）
         prefetch: {},     // 预加载：segIndex -> 段数据
+        draft: null,      // 自绘划选草稿 {start, end}
       };
 
       const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -180,19 +182,83 @@
         return data;
       }
 
-      // ---------- 选区：容器内字符偏移 ----------
+      // ---------- 选区：容器内字符偏移（原生选择优先，自绘草稿兜底） ----------
       function selectionOffsets(container) {
         const sel = window.getSelection();
-        if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
-        const range = sel.getRangeAt(0);
-        if (!container.contains(range.startContainer) || !container.contains(range.endContainer)) return null;
+        if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          if (container.contains(range.startContainer) && container.contains(range.endContainer)) {
+            const pre = document.createRange();
+            pre.selectNodeContents(container);
+            pre.setEnd(range.startContainer, range.startOffset);
+            const start = pre.toString().length;
+            const length = range.toString().length;
+            if (length > 0) return { start, end: start + length };
+          }
+        }
+        // 兜底：自绘草稿选区（宿主屏蔽原生文本选择时，如 ZCode 内置浏览器面板）
+        if (state.draft && state.draft.start < state.draft.end) {
+          return { start: state.draft.start, end: state.draft.end };
+        }
+        return null;
+      }
+
+      // 自绘划选：只依赖鼠标事件（mousedown/mousemove/mouseup），不依赖浏览器原生选择
+      let dragging = false;
+
+      function caretOffset(container, x, y) {
+        let range = null;
+        if (document.caretRangeFromPoint) {
+          range = document.caretRangeFromPoint(x, y);
+        } else if (document.caretPositionFromPoint) {
+          const pos = document.caretPositionFromPoint(x, y);
+          if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset); range.collapse(true); }
+        }
+        if (!range || !container.contains(range.startContainer)) return null;
         const pre = document.createRange();
         pre.selectNodeContents(container);
         pre.setEnd(range.startContainer, range.startOffset);
-        const start = pre.toString().length;
-        const length = range.toString().length;
-        if (length <= 0) return null;
-        return { start, end: start + length };
+        return pre.toString().length;
+      }
+
+      // 落在已有标记内部时贴到最近边界（避免提交必然被"重叠"拒绝）
+      function clampToMarks(pos, marks) {
+        for (const m of marks) {
+          if (pos > m.start && pos < m.end) {
+            return (pos - m.start <= m.end - pos) ? m.start : m.end;
+          }
+        }
+        return pos;
+      }
+
+      function setupDragSelect() {
+        const el = $("rd-text");
+        el.addEventListener("mousedown", (e) => {
+          if (e.button !== 0) return;
+          const off = caretOffset(el, e.clientX, e.clientY);
+          if (off == null) return;
+          dragging = true;
+          state.draft = { start: off, end: off };
+        });
+        el.addEventListener("mousemove", (e) => {
+          if (!dragging || !state.draft) return;
+          const off = caretOffset(el, e.clientX, e.clientY);
+          if (off == null) return;
+          state.draft.end = off;
+          renderActiveTab();
+        });
+        document.addEventListener("mouseup", () => {
+          if (!dragging) return;
+          dragging = false;
+          const d = state.draft;
+          if (!d) return;
+          const tab = state.tabs[state.tabs.length - 1];
+          const marks = (tab && tab.marks) || [];
+          const a = clampToMarks(Math.min(d.start, d.end), marks);
+          const b = clampToMarks(Math.max(d.start, d.end), marks);
+          state.draft = a < b ? { start: a, end: b } : null;
+          renderActiveTab();
+        });
       }
 
       // ---------- 标记渲染 ----------
@@ -203,9 +269,14 @@
         for (const m of list) {
           if (m.start < pos) continue;              // 防御：忽略异常重叠
           if (m.start > pos) html += esc(text.slice(pos, m.start));
-          const cls = m.kind === "explain" ? "mk-shared" : "mk-private";
-          html += `<span class="mk ${cls}" data-node="${m.id}" data-ask="${m.kind === "ask" ? 1 : 0}">`
-            + esc(text.slice(m.start, m.end)) + "</span>";
+          const cls = m.kind === "explain" ? "mk-shared"
+            : (m.kind === "draft" ? "mk-draft" : "mk-private");
+          if (m.kind === "draft") {
+            html += `<span class="mk ${cls}">` + esc(text.slice(m.start, m.end)) + "</span>";
+          } else {
+            html += `<span class="mk ${cls}" data-node="${m.id}" data-ask="${m.kind === "ask" ? 1 : 0}">`
+              + esc(text.slice(m.start, m.end)) + "</span>";
+          }
           pos = m.end;
         }
         html += esc(text.slice(pos));
@@ -261,7 +332,12 @@
         $("rd-left-label").textContent = tab.isRoot ? "本段原文" : "上一层的文本";
         $("rd-right-label").textContent = tab.isRoot ? "本段解释" : "这一层的解释";
         $("rd-text").innerHTML = "";
-        renderText($("rd-text"), tab.text, tab.marks);
+        const marksWithDraft = [...(tab.marks || [])];
+        if (state.draft && state.draft.start < state.draft.end) {
+          marksWithDraft.push({ id: 0, kind: "draft",
+                                start: state.draft.start, end: state.draft.end });
+        }
+        renderText($("rd-text"), tab.text, marksWithDraft);
         $("rd-explain").innerHTML = esc(tab.explain || "（生成中或生成失败）")
           + '<div class="rd-explain-actions">'
           + '<button class="rd-btn ghost" id="rd-del" style="padding:5px 14px;font-size:12.5px">删除这条解释</button>'
@@ -429,6 +505,7 @@
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
             });
+            state.draft = null;
             state.segNodes.push(data.node);
             refreshMarks(tab);
             window.getSelection().removeAllRanges();
@@ -443,7 +520,7 @@
             });
             state.segNodes.push(data.node);
             if (tab.isRoot) { renderQa(state.segNodes); }
-            if (posStart != null) { refreshMarks(tab); }
+            if (posStart != null) { state.draft = null; refreshMarks(tab); }
             $("rd-question").value = "";
             window.getSelection().removeAllRanges();
           }
@@ -520,6 +597,7 @@
       $("rd-question").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
       $("rd-done").addEventListener("click", understood);
       $("rd-prev").addEventListener("click", () => goSegment(state.seg.index - 1));
+      setupDragSelect();   // 自绘划选（原生选择可用时也兼容）
 
       const params = new URLSearchParams(location.search);
       const preset = params.get("url");
