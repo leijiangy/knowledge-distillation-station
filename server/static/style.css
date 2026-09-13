@@ -106,40 +106,66 @@ main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 20px 
   font-size: 13px; background: #fff; color: var(--ink); cursor: pointer;
 }
 
-/* ---- 收藏卡片 ---- */
-.cards { display: flex; flex-direction: column; gap: 14px; }
+/* ---- 收藏卡片（网格布局） ---- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(400px, 100%), 1fr));
+  gap: 16px;
+  align-items: start;
+}
 .card {
   background: var(--card); border: 1px solid var(--line);
   border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 20px 22px; transition: border-color .15s, transform .1s;
+  padding: 16px 18px 12px; display: flex; gap: 12px; align-items: stretch;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
 }
-.card:hover { border-color: #c9d4e5; }
-.card-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
-.card-title {
-  font-size: 16px; font-weight: 650; color: var(--ink); text-decoration: none;
-  line-height: 1.5;
+.card:hover {
+  border-color: #c9d4e5; transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(16, 24, 40, .09);
 }
-.card-title:hover { color: var(--blue); }
-.card-meta { font-size: 12.5px; color: var(--ink-3); margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; }
+.card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.card-meta {
+  font-size: 12.5px; color: var(--ink-3); display: flex; gap: 10px;
+  flex-wrap: wrap; margin-bottom: 8px;
+}
 .card-meta .type-tag {
   background: #f3f4f6; padding: 1px 8px; border-radius: 6px; color: var(--ink-2);
 }
+.card-title {
+  font-size: 15.5px; font-weight: 650; color: var(--ink); text-decoration: none;
+  line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.card-title:hover { color: var(--blue); }
 .card-summary {
-  font-size: 13.5px; color: var(--ink-2); margin-top: 10px;
+  font-size: 13px; color: var(--ink-2); margin-top: 8px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
-/* ---- 三指标条 ---- */
-.metrics { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
-.metric { display: grid; grid-template-columns: 64px 1fr 44px; align-items: center; gap: 10px; }
-.metric-name { font-size: 12.5px; color: var(--ink-2); }
-.metric-track { height: 7px; background: #eef0f3; border-radius: 999px; overflow: hidden; }
-.metric-fill { height: 100%; border-radius: 999px; transition: width .4s ease; }
-.metric[data-kind="approval"] .metric-fill { background: var(--gold); }
-.metric[data-kind="richness"] .metric-fill { background: var(--sky); }
-.metric[data-kind="credibility"] .metric-fill { background: var(--green); }
-.metric-score { font-size: 12.5px; color: var(--ink-2); text-align: right; font-variant-numeric: tabular-nums; }
-.metric-basis { font-size: 11.5px; color: var(--ink-3); grid-column: 2 / 4; margin-top: -4px; }
+/* ---- 雷达图（卡片右下角） ---- */
+.card-radar { flex: 0 0 138px; display: flex; align-items: flex-end; justify-content: flex-end; }
+.radar { width: 138px; height: auto; }
+.radar-grid { fill: none; stroke: #e8eaee; stroke-width: 1; }
+.radar-spoke { stroke: #e8eaee; stroke-width: 1; }
+.radar-area {
+  fill: rgba(37, 99, 235, .16); stroke: var(--blue);
+  stroke-width: 1.6; stroke-linejoin: round;
+}
+.radar-dot { fill: var(--blue); }
+.radar-name { font-size: 10.5px; fill: var(--ink-3); }
+.radar-value { font-size: 12.5px; font-weight: 700; fill: var(--ink); }
+
+/* ---- 图例（hover 显示计算依据） ---- */
+.card-legend {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: var(--ink-2);
+  border-top: 1px dashed var(--line); margin-top: auto; padding-top: 8px;
+}
+.legend-item { display: inline-flex; align-items: center; gap: 5px; cursor: help; }
+.legend-item b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-approval { background: var(--gold); }
+.dot-richness { background: var(--sky); }
+.dot-credibility { background: var(--green); }
 
 /* ---- 状态盒 ---- */
 .state-box {
@@ -164,7 +190,7 @@ main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 20px 
 @media (max-width: 720px) {
   .hero-title { font-size: 30px; }
   .feature-grid { grid-template-columns: 1fr; margin-top: 36px; }
-  .metric { grid-template-columns: 56px 1fr 40px; }
   .toolbar { flex-direction: column; align-items: flex-start; }
-  .card { padding: 16px; }
+  .card { padding: 16px 16px 10px; }
+  .card-legend { gap: 12px; }
 }
