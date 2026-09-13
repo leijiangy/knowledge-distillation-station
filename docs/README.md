@@ -13,7 +13,7 @@
 | 位置 | 内容 |
 |---|---|
 | `skills/zhihu/references/` | **官方知乎 skill 文档**（0.7.2-beta）：hackathon.md（赛程/提交要求）、user-api.md（用户数据 API 契约）、hackathon-oauth.md（OAuth 接入）、http-api.md（搜索/热榜/直答）、hackathon-content-api.md、creator.md、oauth.md 等 |
-| `skills/zhihu-v2026s2/` | 官方黑客松 skill 包（v2026s2）：初始化编排、OAuth 引导文案、Hello World 模板 + Windows 适配脚本（win_init.mjs / win_finalize.mjs） |
+| `skills/zhihu-v2026s2/` | 官方黑客松 skill 包（v2026s2，来源：https://zhstatic.zhihu.com/skill/zhihu-hackathon-skill_v2026s2.zip ）：初始化编排、OAuth 引导文案、Hello World 模板 + Windows 适配脚本（win_init.mjs / win_finalize.mjs） |
 | `skills/distiller-project/` | 本项目 skill：产品定位、架构、三指标口径、api-contracts.md |
 | `skills/distiller-pitfalls/` | 踩坑记录（Windows + 沙箱 + 官方工具链的 10 个坑与解法） |
 | `probe/probe_favorites.py` | 收藏链路探测脚本（已实测全通） |
@@ -28,6 +28,17 @@
 | 开放平台文档中心 | https://developer.zhihu.com/docs?key=zhihu_cli |
 | 本次项目 GitHub 仓库 | https://github.com/leijiangy/knowledge-distillation-station |
 | 看山工作台介绍 | https://www.zhihu.com/parker/campaign/2078900697026905490 |
+
+## 项目凭证与配置位置（不含密钥值）
+
+| 配置项 | 存放位置 | 是否进 git |
+|---|---|---|
+| OAuth App ID（441） | `app/hackathon.config.json` | 是（公开配置） |
+| OAuth App Key | `app/.env`（`ZHIHU_OAUTH_APP_KEY`） | **否**（gitignore 已挡住） |
+| 开放平台 Access Secret | `app/.env`（`ZHIHU_ACCESS_SECRET`） | **否** |
+| OAuth 回调地址 | 部署后在 `hackathon.config.json` + 赛事页面登记（两处必须完全一致） | 是（地址本身不敏感） |
+
+部署时把 App Key 与 Access Secret 写入部署平台的 Secret/环境变量，不进入代码包。
 
 ## 注意
 
