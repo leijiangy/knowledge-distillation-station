@@ -144,7 +144,7 @@ def _compose_cuts(paras: list, prefer_ends: set, total_len: int, max_chars: int)
     return cuts
 
 
-async def segment_article(title: str, content: str, max_chars: int = 1200) -> dict:
+async def segment_article(title: str, content: str, max_chars: int = 600) -> dict:
     """把全文划分为适合逐段精读的小段。返回 {summary, cuts}（切点为字符位置）。
 
     实现要点：把自然段编号后交给模型做「语义分组」（它擅长的），字符位置由后端
@@ -158,8 +158,8 @@ async def segment_article(title: str, content: str, max_chars: int = 1200) -> di
         "下面是一篇知乎文章的全文，已按自然段编号（[0]、[1]、…）。\n\n"
         "请把它划分为适合逐段精读的小段，并给出全文主旨。\n\n"
         "划分规则：\n"
-        "- 一段是一个完整的意思单元，通常由多个自然段组成，目标是读者一次读完能理解\n"
-        "- 参考粒度：3000 字的文章通常切成 3~6 段\n"
+        "- 一段是一个完整的意思单元，目标是读者一次读完能理解\n"
+        "- 参考粒度：一篇 3000 字的文章通常切成 6~10 段（每段约 400~600 字）\n"
         "- 只允许在自然段之间划分，不要在自然段内部切\n"
         "- 不要切得太碎（不要把每个自然段单独成段）\n\n"
         "只返回 JSON："

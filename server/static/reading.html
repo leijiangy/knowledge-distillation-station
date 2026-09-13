@@ -6,103 +6,149 @@
   <title>精读 · 知识蒸馏站</title>
   <link rel="stylesheet" href="/style.css">
   <style>
-    /* 精读内测页（先验证后端链路与 AI 效果，正式界面另行实现） */
-    .r-wrap { width: 100%; max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
-    .r-top { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
-    .r-top a { color: var(--green); text-decoration: none; font-size: 13px; }
-    .r-top h1 { font-size: 19px; }
-    .r-top .r-progress { margin-left: auto; color: var(--ink-3); font-size: 13px; }
-    .r-card {
+    /* ===== 精读会话（设计见 docs/学习会话设计-定稿.md） ===== */
+    body.reading { padding: 20px 16px 24px; }
+    .rd { width: 100%; max-width: 1240px; margin: 0 auto; }
+
+    /* 顶栏 */
+    .rd-head { display: flex; align-items: baseline; gap: 14px; margin: 0 2px 12px; }
+    .rd-head a { color: var(--green); text-decoration: none; font-size: 13px; white-space: nowrap; }
+    .rd-head h1 { font-size: 16px; font-weight: 700; flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rd-head .rd-progress { color: var(--ink-3); font-size: 12.5px; white-space: nowrap; }
+
+    /* 主旨条 */
+    .rd-summary { color: var(--ink-2); font-size: 13px; line-height: 1.7;
+      border-left: 3px solid var(--green); background: rgba(47,122,61,.04);
+      padding: 8px 12px; border-radius: 0 6px 6px 0; margin-bottom: 12px; }
+
+    /* 标签栏（层级） */
+    .rd-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .rd-tab {
+      border: 1px solid var(--line); background: rgba(255,255,252,.8); color: var(--ink-2);
+      border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer;
+      max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: inherit;
+    }
+    .rd-tab.active { background: var(--green); color: #f6fbf3; border-color: var(--green); font-weight: 700; }
+    .rd-tab .x { opacity: .7; margin-left: 6px; }
+
+    /* 主体：左原文 / 右解释 */
+    .rd-body {
+      display: grid; grid-template-columns: 1.12fr .88fr; gap: 16px;
       background-color: var(--paper); background-image: var(--noise);
       border: 1px solid var(--line-card); border-radius: 8px;
       box-shadow: 0 1px 2px rgba(30,40,28,.07), 0 14px 34px -18px rgba(30,40,28,.28);
-      padding: 22px 24px;
+      padding: 18px 20px;
     }
-    .r-start p { margin-bottom: 10px; color: var(--ink-2); font-size: 14px; }
-    .r-start input {
-      width: min(560px, 100%); padding: 9px 12px; font-size: 13.5px; font-family: inherit;
-      border: 1px solid var(--line); border-radius: 8px; background: #fff;
+    @media (max-width: 900px) { .rd-body { grid-template-columns: 1fr; } }
+    .rd-pane-label { font-size: 12px; color: var(--ink-3); font-weight: 700; margin-bottom: 8px; }
+    .rd-text {
+      font-size: 15px; line-height: 2.05; color: var(--ink); white-space: pre-wrap;
+      max-height: 58vh; overflow-y: auto; padding: 4px 6px 10px;
+      border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.6);
+      user-select: text;
     }
-    .r-hint { color: var(--ink-3); font-size: 12.5px; margin-top: 10px; }
-    .r-summary { color: var(--ink-2); font-size: 13.5px; border-left: 3px solid var(--green); padding-left: 10px; margin-bottom: 16px; }
-    .r-cols { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }
-    @media (max-width: 900px) { .r-cols { grid-template-columns: 1fr; } }
-    .r-text {
-      font-size: 15px; line-height: 2.0; color: var(--ink);
-      white-space: pre-wrap; max-height: 56vh; overflow-y: auto;
-      border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; background: rgba(255,255,255,.6);
+    .rd-explain {
+      font-size: 14px; line-height: 1.95; color: var(--ink); white-space: pre-wrap;
+      border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px;
+      background: rgba(47,122,61,.05); min-height: 120px; max-height: 58vh; overflow-y: auto;
     }
-    .r-side h4, .r-chat h4 { font-size: 13px; color: var(--ink-3); margin-bottom: 8px; font-weight: 700; }
-    .r-explain-body {
-      font-size: 14px; line-height: 1.9; color: var(--ink);
-      white-space: pre-wrap; border: 1px solid var(--line); border-radius: 8px;
-      padding: 14px 16px; background: rgba(47,122,61,.05); min-height: 90px;
+    .rd-explain .rd-explain-actions { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); display: flex; gap: 8px; }
+    /* 标记：共享=实线，私有=虚线；草稿=浏览器选中色 */
+    .mk { cursor: pointer; }
+    .mk-shared { border-bottom: 2px solid var(--green); background: rgba(47,122,61,.06); }
+    .mk-private { border-bottom: 2px dashed var(--gold); background: rgba(183,134,40,.05); }
+    .mk-active { background: rgba(47,122,61,.16); }
+
+    /* 底部对话 + 导航（常驻：滚动时钉在视口底部） */
+    .rd-bottom {
+      margin-top: 14px; display: flex; flex-direction: column; gap: 10px;
+      position: sticky; bottom: 8px; z-index: 20;
+      background: rgba(253, 252, 248, .95);
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px 14px;
+      box-shadow: 0 -6px 24px -18px rgba(30, 40, 28, .35);
     }
-    .r-chat { margin-top: 18px; }
-    .r-qa { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
-    .r-qa .q { font-size: 13.5px; font-weight: 700; }
-    .r-qa .a { font-size: 13.5px; color: var(--ink-2); white-space: pre-wrap; border-left: 3px solid var(--line-card); padding-left: 10px; }
-    .r-input-row { display: flex; gap: 8px; }
-    .r-input-row input {
-      flex: 1; padding: 9px 12px; font-size: 13.5px; font-family: inherit;
-      border: 1px solid var(--line); border-radius: 8px; background: #fff;
+    .rd-qa { display: flex; flex-direction: column; gap: 8px; max-height: 26vh; overflow-y: auto; }
+    .rd-qa .q { font-size: 13.5px; font-weight: 700; }
+    .rd-qa .a { font-size: 13.5px; color: var(--ink-2); white-space: pre-wrap;
+      border-left: 3px solid var(--line-card); padding-left: 10px; }
+    .rd-qa .a .del { margin-left: 8px; font-size: 12px; color: var(--ink-3); cursor: pointer; border: 0; background: none; font-family: inherit; }
+    .rd-input-row { display: flex; gap: 8px; }
+    .rd-input-row input {
+      flex: 1; padding: 10px 13px; font-size: 14px; font-family: inherit;
+      border: 1px solid var(--line); border-radius: 9px; background: #fff;
     }
-    .r-nav { display: flex; gap: 10px; margin-top: 20px; }
-    .r-btn {
+    .rd-hint { font-size: 12px; color: var(--ink-3); margin-top: -4px; }
+    .rd-nav { display: flex; gap: 10px; align-items: center; }
+    .rd-btn {
       background: var(--green); color: #f6fbf3; border: none; cursor: pointer;
-      padding: 9px 20px; font-size: 13.5px; font-weight: 700; border-radius: 9px; font-family: inherit;
+      padding: 10px 22px; font-size: 14px; font-weight: 700; border-radius: 9px; font-family: inherit;
     }
-    .r-btn:hover { background: var(--green-dark); }
-    .r-btn.ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--line); }
-    .r-btn.ghost:hover { color: var(--green); border-color: #c6d2bf; }
-    .r-btn:disabled { opacity: .45; cursor: default; }
-    .r-error { color: #a33; font-size: 13px; margin-top: 10px; white-space: pre-wrap; }
-    .r-loading { color: var(--ink-3); font-size: 13px; }
+    .rd-btn:hover { background: var(--green-dark); }
+    .rd-btn.ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--line); }
+    .rd-btn.ghost:hover { color: var(--green); border-color: #c6d2bf; }
+    .rd-btn:disabled { opacity: .45; cursor: default; }
+    .rd-error { color: #a33; font-size: 13px; white-space: pre-wrap; }
+    .rd-done { text-align: center; padding: 40px 20px; }
+    .rd-done h2 { font-size: 20px; margin-bottom: 14px; }
   </style>
 </head>
-<body>
-  <div class="r-wrap">
-    <div class="r-top">
-      <a href="/">← 返回收藏列表</a>
-      <h1>精读内测</h1>
-      <span class="r-progress" id="r-progress"></span>
+<body class="reading">
+  <div class="rd">
+    <div class="rd-head">
+      <a href="/">← 收藏夹</a>
+      <h1 id="rd-title">精读</h1>
+      <span class="rd-progress" id="rd-progress"></span>
     </div>
 
-    <div class="r-card r-start" id="r-start">
-      <p>粘贴一篇<b>已蒸馏</b>文章的知乎链接，开始逐段精读：</p>
-      <input id="r-url" placeholder="https://zhuanlan.zhihu.com/p/..." autocomplete="off">
-      <button class="r-btn" id="r-open" style="margin-left:8px">开始精读</button>
-      <div class="r-hint" id="r-start-hint">首次打开会现场划分段落（约 10~30 秒），之后缓存复用。</div>
-      <div class="r-error" id="r-start-error" hidden></div>
+    <!-- 开始卡 -->
+    <div class="rd-body" id="rd-start" style="display:block">
+      <p class="rd-pane-label">粘贴一篇已蒸馏文章的知乎链接，开始逐段精读</p>
+      <div class="rd-input-row" style="margin:10px 0">
+        <input id="rd-url" placeholder="https://zhuanlan.zhihu.com/p/..." autocomplete="off">
+        <button class="rd-btn" id="rd-open">开始</button>
+      </div>
+      <div class="rd-hint">首次打开会现场划分段落并生成第一段解释（约 10~30 秒），之后缓存复用。</div>
+      <div class="rd-error" id="rd-start-error" style="margin-top:8px"></div>
     </div>
 
-    <div class="r-card" id="r-session" hidden>
-      <div class="r-summary" id="r-summary"></div>
-      <div class="r-cols">
+    <!-- 会话 -->
+    <div id="rd-session" hidden>
+      <div class="rd-summary" id="rd-summary"></div>
+      <div class="rd-tabs" id="rd-tabs" hidden></div>
+
+      <div class="rd-body">
         <div>
-          <h4 style="font-size:13px;color:var(--ink-3);margin-bottom:8px;font-weight:700">本段原文</h4>
-          <article class="r-text" id="r-text"></article>
+          <div class="rd-pane-label" id="rd-left-label">本段原文</div>
+          <div class="rd-text" id="rd-text"></div>
         </div>
-        <aside class="r-side">
-          <h4>本段解释</h4>
-          <div class="r-explain-body" id="r-explain-body"></div>
-        </aside>
+        <div>
+          <div class="rd-pane-label" id="rd-right-label">本段解释</div>
+          <div class="rd-explain" id="rd-explain"></div>
+        </div>
       </div>
 
-      <div class="r-chat">
-        <h4>提问（仅自己可见）</h4>
-        <div class="r-qa" id="r-qa"></div>
-        <div class="r-input-row">
-          <input id="r-question" placeholder="针对这一段提出问题…" autocomplete="off">
-          <button class="r-btn" id="r-ask">提问</button>
+      <div class="rd-bottom">
+        <div class="rd-qa" id="rd-qa"></div>
+        <div class="rd-input-row">
+          <input id="rd-question" placeholder="划选一段文字生成共享解释；或直接打字提问（只有自己可见）" autocomplete="off">
+          <button class="rd-btn" id="rd-ask">提问</button>
         </div>
-        <div class="r-error" id="r-ask-error" hidden></div>
+        <div class="rd-error" id="rd-ask-error"></div>
+        <div class="rd-nav">
+          <button class="rd-btn ghost" id="rd-prev">← 上一段</button>
+          <button class="rd-btn" id="rd-done">我懂了 →</button>
+          <span class="rd-hint" id="rd-nav-hint" hidden style="margin:0">生成中…</span>
+        </div>
       </div>
 
-      <div class="r-nav">
-        <button class="r-btn ghost" id="r-prev">← 上一段</button>
-        <button class="r-btn" id="r-done">我懂了 →</button>
-        <span class="r-loading" id="r-nav-hint" hidden>生成中…</span>
+      <div class="rd-done" id="rd-finish" hidden>
+        <h2>🎉 这篇读完了</h2>
+        <p class="rd-hint" style="margin-bottom:16px">你留在这里的提问和解释都保存着，随时可以回来。</p>
+        <a class="rd-btn" href="/" style="text-decoration:none">返回收藏夹</a>
       </div>
     </div>
   </div>
@@ -111,131 +157,344 @@
     (() => {
       "use strict";
       const $ = (id) => document.getElementById(id);
-      const state = { url: "", seg: 0, total: 0 };
+      const state = {
+        url: "", article: null, seg: null,
+        marks: [],        // 当前展示文本上的标记（共享 explain / 私有 ask 锚点）
+        segNodes: [],     // 本段可见节点（共享 init/explain + 自己的 ask）
+        tabs: [],         // 层级标签：[{nodeId, label, text, marks, explain, isRoot}]
+        rootMarks: [],    // 本段的标记（回到根层时用）
+        prefetch: {},     // 预加载：segIndex -> 段数据
+      };
 
-      function show(el) { el.hidden = false; }
-      function hide(el) { el.hidden = true; }
-      function setError(el, msg) { el.textContent = msg || ""; el.hidden = !msg; }
+      const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
       async function api(path, options) {
         const resp = await fetch(path, options);
         const data = await resp.json().catch(() => ({}));
-        if (!data || (data.ok === false)) {
+        if (!data || data.ok === false) {
           const msg = (data && data.error && data.error.message) || ("请求失败（HTTP " + resp.status + "）");
-          const err = new Error(msg);
-          err.code = data && data.error && data.error.code;
+          const err = new Error(msg); err.code = data && data.error && data.error.code;
           throw err;
         }
         return data;
       }
 
-      function renderSegment(seg) {
-        state.seg = seg.index;
-        state.total = seg.total;
-        $("r-progress").textContent = "第 " + (seg.index + 1) + " / " + seg.total + " 段";
-        $("r-text").textContent = seg.text;
-        $("r-explain-body").textContent = seg.explain || "（本段解释生成失败，可刷新重试）";
-        const qa = $("r-qa");
-        qa.innerHTML = "";
-        (seg.nodes || []).filter((n) => n.kind === "ask").forEach((n) => {
-          const q = document.createElement("div");
-          q.className = "q"; q.textContent = "Q：" + (n.question || "");
-          const a = document.createElement("div");
-          a.className = "a"; a.textContent = n.content || "";
-          qa.appendChild(q); qa.appendChild(a);
-        });
-        $("r-prev").disabled = seg.index <= 0;
-        $("r-done").textContent = seg.index + 1 >= seg.total ? "读完，返回收藏夹 →" : "我懂了 →";
+      // ---------- 选区：容器内字符偏移 ----------
+      function selectionOffsets(container) {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
+        const range = sel.getRangeAt(0);
+        if (!container.contains(range.startContainer) || !container.contains(range.endContainer)) return null;
+        const pre = document.createRange();
+        pre.selectNodeContents(container);
+        pre.setEnd(range.startContainer, range.startOffset);
+        const start = pre.toString().length;
+        const length = range.toString().length;
+        if (length <= 0) return null;
+        return { start, end: start + length };
       }
 
+      // ---------- 标记渲染 ----------
+      function renderText(container, text, marks) {
+        const list = [...(marks || [])].sort((a, b) => a.start - b.start);
+        let html = "";
+        let pos = 0;
+        for (const m of list) {
+          if (m.start < pos) continue;              // 防御：忽略异常重叠
+          if (m.start > pos) html += esc(text.slice(pos, m.start));
+          const cls = m.kind === "explain" ? "mk-shared" : "mk-private";
+          html += `<span class="mk ${cls}" data-node="${m.id}" data-ask="${m.kind === "ask" ? 1 : 0}">`
+            + esc(text.slice(m.start, m.end)) + "</span>";
+          pos = m.end;
+        }
+        html += esc(text.slice(pos));
+        container.innerHTML = html;
+        container.querySelectorAll(".mk").forEach((el) => {
+          el.addEventListener("click", () => {
+            const id = Number(el.getAttribute("data-node"));
+            if (el.getAttribute("data-ask") === "1") { scrollToAsk(id); }
+            else { openExplainTab(id); }
+          });
+        });
+      }
+
+      function scrollToAsk(id) {
+        const box = document.querySelector('#rd-qa [data-qa="' + id + '"]');
+        if (box) box.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+
+      // ---------- 层级标签 ----------
+      function renderTabs() {
+        const bar = $("rd-tabs");
+        if (!state.tabs.length) { bar.hidden = true; bar.innerHTML = ""; return; }
+        bar.hidden = false;
+        bar.innerHTML = state.tabs.map((t, i) =>
+          `<button class="rd-tab${i === state.tabs.length - 1 ? " active" : ""}" data-tab="${i}">`
+          + esc(t.label)
+          + (t.isRoot ? "" : '<span class="x">×</span>')
+          + "</button>").join("");
+        bar.querySelectorAll("[data-tab]").forEach((el) => {
+          el.addEventListener("click", (ev) => {
+            const i = Number(el.getAttribute("data-tab"));
+            if (i === state.tabs.length - 1 && ev.target.classList.contains("x")) { closeTopTab(); return; }
+            trimTabsTo(i);
+          });
+        });
+      }
+
+      function trimTabsTo(index) {
+        state.tabs = state.tabs.slice(0, index + 1);
+        renderActiveTab();
+      }
+
+      function closeTopTab() {
+        if (state.tabs.length <= 1) return;
+        state.tabs.pop();
+        renderActiveTab();
+      }
+
+      function renderActiveTab() {
+        const tab = state.tabs[state.tabs.length - 1];
+        if (!tab) return;
+        renderTabs();
+        $("rd-left-label").textContent = tab.isRoot ? "本段原文" : "上一层的文本";
+        $("rd-right-label").textContent = tab.isRoot ? "本段解释" : "这一层的解释";
+        $("rd-text").innerHTML = "";
+        renderText($("rd-text"), tab.text, tab.marks);
+        $("rd-explain").innerHTML = esc(tab.explain || "（生成中或生成失败）")
+          + '<div class="rd-explain-actions">'
+          + '<button class="rd-btn ghost" id="rd-del" style="padding:5px 14px;font-size:12.5px">删除这条解释</button>'
+          + "</div>";
+        const del = $("rd-del");
+        if (del) del.addEventListener("click", () => deleteNode(tab.nodeId));
+        $("rd-done").textContent = tab.isRoot
+          ? (state.seg.index + 1 >= state.article.total ? "读完了 →" : "我懂了 →")
+          : "收起这一层 ←";
+        $("rd-prev").disabled = !tab.isRoot || state.seg.index <= 0;
+        const root = state.tabs[0];
+        if (root) state.marks = root.marks;
+      }
+
+      function openExplainTab(nodeId) {
+        const node = findNode(nodeId);
+        if (!node) return;
+        const parentTab = state.tabs[state.tabs.length - 1];
+        const children = childMarks(node);
+        state.tabs.push({
+          nodeId,
+          label: (node.content || node.question || "").slice(0, 14) || "解释",
+          text: parentTab.text.slice(node.pos_start || 0, node.pos_end || 0) || parentTab.text,
+          marks: children,
+          explain: node.kind === "ask"
+            ? ("Q：" + (node.question || "") + "\n\n" + (node.content || ""))
+            : (node.content || ""),
+          isRoot: false,
+        });
+        renderActiveTab();
+      }
+
+      function childMarks(node) {
+        return state.segNodes
+          .filter((n) => n.parent_id === node.id && n.pos_start != null && n.pos_end != null)
+          .map((n) => ({ id: n.id, kind: n.kind === "ask" ? "ask" : "explain",
+                         start: n.pos_start, end: n.pos_end }));
+      }
+
+      function findNode(id) {
+        return (state.segNodes || []).find((n) => n.id === id);
+      }
+
+      // ---------- 渲染一段 ----------
+      function segMarks(nodes) {
+        return (nodes || [])
+          .filter((n) => n.pos_start != null && n.pos_end != null && n.kind !== "init")
+          .map((n) => ({ id: n.id, kind: n.kind === "ask" ? "ask" : "explain",
+                         start: n.pos_start, end: n.pos_end }));
+      }
+
+      function renderQa(nodes) {
+        const box = $("rd-qa");
+        box.innerHTML = "";
+        (nodes || []).filter((n) => n.kind === "ask" && !n.parent_id).forEach((n) => {
+          const q = document.createElement("div");
+          q.className = "q"; q.setAttribute("data-qa", n.id); q.textContent = "Q：" + (n.question || "");
+          const a = document.createElement("div");
+          a.className = "a"; a.textContent = n.content || "";
+          const del = document.createElement("button");
+          del.className = "del"; del.textContent = "删除";
+          del.addEventListener("click", () => deleteNode(n.id));
+          a.appendChild(del);
+          box.appendChild(q); box.appendChild(a);
+        });
+      }
+
+      function renderSegment(payload) {
+        state.seg = payload;
+        state.segNodes = payload.nodes || [];
+        state.rootMarks = segMarks(payload.nodes);
+        state.tabs = [{ nodeId: payload.explain_id, label: "本段解释", text: payload.text,
+                        marks: state.rootMarks, explain: payload.explain || "（生成中或生成失败）", isRoot: true }];
+        state.marks = state.rootMarks;
+        $("rd-progress").textContent = "第 " + (payload.index + 1) + " / " + payload.total + " 段";
+        renderQa(payload.nodes);
+        renderActiveTab();
+        $("rd-text").scrollTop = 0;
+        preloadSegment(payload.index + 1);   // 预加载下一段的解释，消除「我懂了」后的等待
+      }
+
+      // 预加载：进入本段后，后台静默生成下一段的初始解释（服务端按段懒生成 + 缓存）
+      function preloadSegment(n) {
+        if (n < 0 || !state.article || n >= state.article.total) return;
+        if (state.prefetch[n]) return;
+        api("/api/reading/segment?url=" + encodeURIComponent(state.url) + "&seg=" + n)
+          .then((data) => {
+            // 仅在尚未到达该段时缓存（防止过期数据覆盖当前段）
+            if (state.seg && state.seg.index < n) state.prefetch[n] = data.segment;
+          })
+          .catch(() => { /* 静默：真正进入该段时会重新请求 */ });
+      }
+
+      // ---------- 操作 ----------
       async function openArticle(url) {
-        setError($("r-start-error"), "");
-        $("r-open").disabled = true;
-        $("r-start-hint").textContent = "正在划分段落并生成第一段解释（约 10~30 秒）…";
+        $("rd-start-error").textContent = "";
+        $("rd-open").disabled = true;
+        $("rd-url").disabled = true;
         try {
           const data = await api("/api/reading/open", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url }),
           });
           state.url = url;
-          $("r-summary").textContent = data.article.summary ? "主旨：" + data.article.summary : "";
-          hide($("r-start")); show($("r-session"));
+          state.article = data.article;
+          $("rd-title").textContent = data.article.title || "精读";
+          $("rd-summary").textContent = data.article.summary ? "主旨：" + data.article.summary : "";
+          $("rd-summary").hidden = !data.article.summary;
+          $("rd-start").hidden = true; $("rd-session").hidden = false;
           renderSegment(data.segment);
-          $("r-start-hint").textContent = "";
         } catch (err) {
-          setError($("r-start-error"), err.message + (err.code === "NOT_DISTILLED" ? "（先在收藏列表里点「去蒸馏全文」）" : ""));
-          $("r-start-hint").textContent = "";
-        } finally {
-          $("r-open").disabled = false;
+          $("rd-start-error").textContent = err.message
+            + (err.code === "NOT_DISTILLED" ? "（先在收藏列表里点「去蒸馏全文」）" : "");
+          $("rd-open").disabled = false;
+          $("rd-url").disabled = false;
         }
       }
 
       async function goSegment(n) {
-        if (n < 0 || (state.total && n >= state.total)) return;
-        $("r-nav-hint").hidden = false;
-        $("r-prev").disabled = $("r-done").disabled = true;
+        if (n < 0 || (state.article && n >= state.article.total)) return;
+        if (state.prefetch[n]) {           // 命中预加载：秒切
+          const cached = state.prefetch[n];
+          delete state.prefetch[n];
+          renderSegment(cached);
+          return;
+        }
+        $("rd-nav-hint").hidden = false;
+        $("rd-prev").disabled = $("rd-done").disabled = true;
         try {
           const data = await api("/api/reading/segment?url=" + encodeURIComponent(state.url) + "&seg=" + n);
           renderSegment(data.segment);
         } catch (err) {
           alert("进入段落失败：" + err.message);
         } finally {
-          $("r-nav-hint").hidden = true;
-          $("r-prev").disabled = state.seg <= 0;
-          $("r-done").disabled = false;
+          $("rd-nav-hint").hidden = true;
+          $("rd-done").disabled = false;
         }
       }
 
-      async function ask() {
-        const question = $("r-question").value.trim();
-        if (!question) return;
-        setError($("r-ask-error"), "");
-        $("r-ask").disabled = true;
-        $("r-ask").textContent = "生成中…";
+      async function submit() {
+        const question = $("rd-question").value.trim();
+        const offsets = selectionOffsets($("rd-text"));
+        const tab = state.tabs[state.tabs.length - 1];
+        if (!question && !offsets) { $("rd-ask-error").textContent = "先划选一段文字，或输入你的问题。"; return; }
+        $("rd-ask-error").textContent = "";
+        $("rd-ask").disabled = true; $("rd-ask").textContent = "生成中…";
         try {
-          const data = await api("/api/reading/ask", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: state.url, seg: state.seg, question }),
-          });
-          const qa = $("r-qa");
-          const q = document.createElement("div"); q.className = "q"; q.textContent = "Q：" + question;
-          const a = document.createElement("div"); a.className = "a"; a.textContent = data.node.content || "";
-          qa.appendChild(q); qa.appendChild(a);
-          $("r-question").value = "";
+          if (offsets && !question) {
+            // 纯选中 = 共享解释
+            const data = await api("/api/reading/selection", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ url: state.url, seg: state.seg.index,
+                                     pos_start: offsets.start, pos_end: offsets.end }),
+            });
+            state.segNodes.push(data.node);
+            tab.marks = segMarks(state.segNodes);
+            renderActiveTab();
+            window.getSelection().removeAllRanges();
+          } else {
+            // 有输入 = 私有提问（锚定选区或当前层）
+            const body = { url: state.url, seg: state.seg.index, question };
+            if (offsets) { body.pos_start = offsets.start; body.pos_end = offsets.end; }
+            else if (tab && !tab.isRoot && tab.nodeId) { body.parent_id = tab.nodeId; }
+            const data = await api("/api/reading/ask", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            state.segNodes.push(data.node);
+            if (tab.isRoot) { renderQa(state.segNodes); }
+            if (offsets) { tab.marks = segMarks(state.segNodes); renderActiveTab(); }
+            $("rd-question").value = "";
+            window.getSelection().removeAllRanges();
+          }
         } catch (err) {
-          setError($("r-ask-error"), err.message);
+          $("rd-ask-error").textContent = err.message;
         } finally {
-          $("r-ask").disabled = false;
-          $("r-ask").textContent = "提问";
+          $("rd-ask").disabled = false; $("rd-ask").textContent = "提问";
+        }
+      }
+
+      async function deleteNode(nodeId) {
+        if (!nodeId) return;
+        if (!confirm("删除这条解释？它下面的追问也会一起删除。")) return;
+        try {
+          await api("/api/reading/node/" + nodeId + "?url=" + encodeURIComponent(state.url),
+                    { method: "DELETE" });
+          state.segNodes = state.segNodes.filter((n) => n.id !== nodeId && n.parent_id !== nodeId);
+          const tab = state.tabs[state.tabs.length - 1];
+          if (tab.isRoot) { renderQa(state.segNodes); tab.marks = segMarks(state.segNodes); }
+          if (state.tabs.some((t) => t.nodeId === nodeId)) { trimTabsTo(0); }
+          else { renderActiveTab(); }
+        } catch (err) {
+          alert("删除失败：" + err.message);
         }
       }
 
       async function understood() {
-        if (state.total && state.seg + 1 >= state.total) {
-          location.href = "/";
+        const tab = state.tabs[state.tabs.length - 1];
+        if (!tab.isRoot) { closeTopTab(); return; }     // 层级：收起本层
+        if (state.seg.index + 1 >= state.article.total) {   // 最后一段：读完
+          fetch("/api/reading/event", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: state.url, event: "understood", seg_index: state.seg.index }),
+          }).catch(() => {});
+          $("rd-session").querySelector(".rd-body").hidden = true;
+          $("rd-tabs").hidden = true;
+          $("rd-right-label").hidden = true;
+          document.querySelector(".rd-bottom").hidden = true;
+          $("rd-finish").hidden = false;
           return;
         }
         fetch("/api/reading/event", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: state.url, event: "understood", seg_index: state.seg }),
+          body: JSON.stringify({ url: state.url, event: "understood", seg_index: state.seg.index }),
         }).catch(() => {});
-        await goSegment(state.seg + 1);
+        await goSegment(state.seg.index + 1);
       }
 
-      $("r-open").addEventListener("click", () => {
-        const url = $("r-url").value.trim();
-        if (!url) { setError($("r-start-error"), "请先粘贴知乎链接。"); return; }
+      // ---------- 事件 ----------
+      $("rd-open").addEventListener("click", () => {
+        const url = $("rd-url").value.trim();
+        if (!url) { $("rd-start-error").textContent = "请先粘贴知乎链接。"; return; }
         openArticle(url);
       });
-      $("r-url").addEventListener("keydown", (e) => { if (e.key === "Enter") $("r-open").click(); });
-      $("r-ask").addEventListener("click", ask);
-      $("r-question").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
-      $("r-done").addEventListener("click", understood);
-      $("r-prev").addEventListener("click", () => goSegment(state.seg - 1));
+      $("rd-url").addEventListener("keydown", (e) => { if (e.key === "Enter") $("rd-open").click(); });
+      $("rd-ask").addEventListener("click", submit);
+      $("rd-question").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+      $("rd-done").addEventListener("click", understood);
+      $("rd-prev").addEventListener("click", () => goSegment(state.seg.index - 1));
 
       const params = new URLSearchParams(location.search);
       const preset = params.get("url");
-      if (preset) { $("r-url").value = preset; openArticle(preset); }
+      if (preset) { $("rd-url").value = preset; openArticle(preset); }
     })();
   </script>
 </body>
