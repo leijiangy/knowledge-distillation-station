@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>知识蒸馏站 · 把收藏夹变成学习进度表</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">🧪</span>
+      <span class="brand-name">知识蒸馏站</span>
+    </div>
+    <div class="user-area" id="user-area" hidden>
+      <img class="avatar" id="user-avatar" alt="" hidden>
+      <span class="username" id="user-name"></span>
+      <button class="btn-ghost" id="logout-btn">退出</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- 未登录：产品介绍 -->
+    <section class="hero" id="hero">
+      <h1 class="hero-title">你的收藏夹，<br>不该只是收藏。</h1>
+      <p class="hero-sub">
+        连接你的知乎收藏夹，这里逐条呈现每篇内容的
+        <b>认可度</b>、<b>信息量</b>、<b>准确性</b>，
+        帮你找出真正值得花时间学的那一篇。
+      </p>
+      <div class="hero-actions">
+        <button class="btn-primary" id="login-btn">连接我的知乎收藏夹</button>
+        <p class="hint" id="login-hint" hidden></p>
+      </div>
+      <div class="feature-grid">
+        <div class="feature">
+          <span class="feature-icon">📊</span>
+          <h3>三指标量化</h3>
+          <p>社区认可、内容厚度、可靠程度，分开展示，不合成模糊总分</p>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">🗂️</span>
+          <h3>全量读取</h3>
+          <p>分页取全整个收藏夹，不只是"最近几条"</p>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">🔍</span>
+          <h3>依据透明</h3>
+          <p>每个分数都列出计算依据，看得见怎么来的</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 已登录：收藏工作区 -->
+    <section class="workspace" id="workspace" hidden>
+      <div class="toolbar">
+        <div class="toolbar-info">
+          <h2 id="favlist-title">我的收藏</h2>
+          <span class="count-badge" id="count-badge"></span>
+          <span class="cache-badge" id="cache-badge" hidden>缓存命中</span>
+        </div>
+        <div class="toolbar-actions">
+          <label class="sort-label">排序</label>
+          <select id="sort-select" class="select">
+            <option value="favtime">收藏时间（新→旧）</option>
+            <option value="approval">认可度（高→低）</option>
+            <option value="richness">信息量（高→低）</option>
+            <option value="credibility">准确性（高→低）</option>
+          </select>
+          <button class="btn-ghost" id="refresh-btn">刷新</button>
+        </div>
+      </div>
+      <div class="cards" id="cards"></div>
+    </section>
+
+    <!-- 状态：加载 / 错误 / 空 -->
+    <section class="state-box" id="state-loading" hidden>
+      <div class="spinner"></div>
+      <p id="loading-text">正在读取你的收藏夹……</p>
+    </section>
+    <section class="state-box" id="state-error" hidden>
+      <span class="state-icon">⚠️</span>
+      <p id="error-text"></p>
+      <button class="btn-primary" id="retry-btn">重试</button>
+    </section>
+    <section class="state-box" id="state-empty" hidden>
+      <span class="state-icon">🗒️</span>
+      <p id="empty-text">这个收藏夹还是空的。</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>知识蒸馏站 · 知乎黑客松 2026 校园新锐季 · 数据来自知乎开放平台</p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
