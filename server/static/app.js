@@ -17,6 +17,14 @@
     stateEmpty: $("state-empty"), emptyText: $("empty-text"),
     stateLogin: $("state-login"), loginText: $("login-text"), loginBtn: $("login-btn"),
     pager: $("pager"),
+    navBookmark: $("nav-bookmark"), loginBookmarkBtn: $("login-bookmark-btn"),
+    bookmarkModal: $("bookmark-modal"), bookmarkModalBackdrop: $("bookmark-modal-backdrop"),
+    bookmarkModalClose: $("bookmark-modal-close"),
+    bookmarkletLink: $("bookmarklet-link"), bookmarkletCode: $("bookmarklet-code"),
+    copyBookmarklet: $("copy-bookmarklet"),
+    fulltextModal: $("fulltext-modal"), fulltextBackdrop: $("fulltext-backdrop"),
+    fulltextClose: $("fulltext-close"), fulltextTitle: $("fulltext-title"),
+    fulltextMeta: $("fulltext-meta"), fulltextBody: $("fulltext-body"),
   };
 
   const PAGE_SIZE = 8;   // 每页卡片数
@@ -38,6 +46,49 @@
   let allItems = [];          // 当前收藏夹的全部条目
   let sortMode = "favtime";
   let page = 1;               // 当前页码（客户端分页）
+  let distilledMap = {};      // 已蒸馏内容索引：url(去参) -> {title, length, at}
+
+  // ---- 蒸馏书签（动态生成：写入当前站点域名） ----
+  function buildBookmarklet() {
+    const origin = window.location.origin;
+    return [
+      "javascript:(function(){",
+      "var el=document.querySelector('.RichContent-inner')||document.querySelector('.Post-RichText')||document.querySelector('.RichText');",
+      "if(!el){alert('请在知乎的回答或文章页面使用这个书签');return;}",
+      "var text=(el.innerText||'').trim();",
+      "var title=(document.title||'').replace(/ ?[-—|] ?知乎.*$/,'').trim();",
+      "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
+      "if(!confirm('蒸馏这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字')){return;}",
+      "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:location.href,content:text})})",
+      ".then(function(r){return r.json()})",
+      ".then(function(d){alert(d.ok?('✓ 已进入知识蒸馏站（'+text.length+' 字）'):('失败：'+((d.error&&d.error.message)||'未知错误')))});",
+      "})();",
+    ].join("");
+  }
+
+  function initBookmarklet() {
+    const code = buildBookmarklet();
+    if (els.bookmarkletLink) els.bookmarkletLink.setAttribute("href", code);
+    if (els.bookmarkletCode) els.bookmarkletCode.value = code;
+  }
+
+  function openModal(el) { if (el) el.hidden = false; }
+  function closeModal(el) { if (el) el.hidden = true; }
+
+  async function openFulltext(url, title) {
+    els.fulltextTitle.textContent = title || "全文";
+    els.fulltextMeta.textContent = "加载中…";
+    els.fulltextBody.textContent = "";
+    openModal(els.fulltextModal);
+    try {
+      const data = await api("/api/distilled/content?url=" + encodeURIComponent(url));
+      if (!data.ok) throw new Error((data.error && data.error.message) || "读取失败");
+      els.fulltextMeta.textContent = "全文 " + data.length + " 字 · 由「蒸馏书签」从知乎页面送入";
+      els.fulltextBody.textContent = data.content;
+    } catch (err) {
+      els.fulltextMeta.textContent = err.message || "读取失败";
+    }
+  }
 
   // ---- 工具 ----
   function escapeHtml(text) {
@@ -115,6 +166,11 @@
     const m = item.metrics || {};
     const author = item.Author && item.Author.Name ? item.Author.Name : "";
     const initial = author ? author.slice(0, 1) : "·";
+    const dKey = String(item.Url || "").split("?")[0];
+    const dist = distilledMap[dKey];
+    const badgeHtml = dist
+      ? `<button class="distill-badge" data-distill="${escapeHtml(dKey)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`
+      : "";
     const labels = ["approval", "richness", "credibility"].map((kind) => {
       const metric = m[kind] || {};
       const basis = (metric.basis || []).join(" · ");
@@ -140,6 +196,7 @@
             <div class="radar-labels">${labels}</div>
           </div>
         </div>
+        ${badgeHtml}
         <div class="foot">依据：收藏 ${item.FavoriteCount || 0} · 赞同 ${item.LikeCount || 0} · 评论 ${item.CommentCount || 0}</div>
       </article>`;
   }
@@ -163,6 +220,9 @@
     const sorted = sortItems();
     const start = (page - 1) * PAGE_SIZE;
     els.cards.innerHTML = sorted.slice(start, start + PAGE_SIZE).map(cardHtml).join("");
+    els.cards.querySelectorAll("[data-distill]").forEach((btn) => {
+      btn.addEventListener("click", () => openFulltext(btn.getAttribute("data-distill"), btn.getAttribute("data-title")));
+    });
     renderPager();
     observeCards();
   }
@@ -394,6 +454,13 @@
       }
       allItems = data.items || [];
       page = 1;
+      // 拉取"已蒸馏"索引（书签送进来的全文标记）
+      try {
+        const dist = await api("/api/distilled");
+        distilledMap = dist.ok ? (dist.items || {}) : {};
+      } catch (err) {
+        distilledMap = {};
+      }
       const meta = data.favlist || {};
       if (meta.UrlToken != null) currentToken = String(meta.UrlToken);
       els.favlistTitle.innerHTML = `${escapeHtml(meta.Title || "我的收藏")} <span class="count" id="count-badge">${data.count} 条</span>`;
@@ -486,6 +553,35 @@
   for (const el of [els.navHome, els.navHistory]) {
     el.addEventListener("click", (event) => event.preventDefault());
   }
+
+  // 蒸馏书签：教程弹窗与复制
+  initBookmarklet();
+  const openBookmarkTutorial = () => openModal(els.bookmarkModal);
+  if (els.navBookmark) els.navBookmark.addEventListener("click", openBookmarkTutorial);
+  if (els.loginBookmarkBtn) els.loginBookmarkBtn.addEventListener("click", openBookmarkTutorial);
+  if (els.bookmarkModalClose) els.bookmarkModalClose.addEventListener("click", () => closeModal(els.bookmarkModal));
+  if (els.bookmarkModalBackdrop) els.bookmarkModalBackdrop.addEventListener("click", () => closeModal(els.bookmarkModal));
+  if (els.copyBookmarklet) {
+    els.copyBookmarklet.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(els.bookmarkletCode.value);
+        els.copyBookmarklet.textContent = "已复制 ✓";
+        setTimeout(() => { els.copyBookmarklet.textContent = "复制书签代码"; }, 1800);
+      } catch (err) {
+        els.bookmarkletCode.select();
+        els.copyBookmarklet.textContent = "请按 Ctrl+C 复制";
+      }
+    });
+  }
+  // 全文弹窗关闭
+  if (els.fulltextClose) els.fulltextClose.addEventListener("click", () => closeModal(els.fulltextModal));
+  if (els.fulltextBackdrop) els.fulltextBackdrop.addEventListener("click", () => closeModal(els.fulltextModal));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeModal(els.bookmarkModal);
+      closeModal(els.fulltextModal);
+    }
+  });
 
   // 开发调试入口（本地预览用）
   window.__kd = { boot, loadCollections, get items() { return allItems; } };

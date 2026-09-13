@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>书签小工具 · 演示</title>
+<style>
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #edf3e7; color: #22301f; line-height: 1.8;
+    max-width: 720px; margin: 0 auto; padding: 40px 24px 80px;
+  }
+  h1 { font-size: 24px; margin-bottom: 6px; }
+  .sub { color: #5c6b57; font-size: 14px; margin-bottom: 30px; }
+  .step {
+    background: rgba(255,255,253,.9); border: 1px solid #d7e0d0; border-radius: 10px;
+    padding: 18px 22px; margin-bottom: 16px;
+  }
+  .step b { color: #2f7a3d; }
+  .bookmarklet {
+    display: inline-block; margin: 10px 0 4px;
+    background: #2f7a3d; color: #f6fbf3; text-decoration: none;
+    padding: 10px 22px; border-radius: 9px; font-weight: 700;
+    border: 2px dashed rgba(255,255,255,.5);
+    cursor: grab;
+  }
+  .bookmarklet:active { cursor: grabbing; }
+  .hint { color: #7a8776; font-size: 12.5px; }
+  code { background: #eef3ea; padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
+  .note { background: #fff9ec; border: 1px solid #f0e0bd; border-radius: 10px; padding: 14px 20px; font-size: 13.5px; color: #6b5b2a; }
+</style>
+</head>
+<body>
+  <h1>🧪 书签小工具 · 演示</h1>
+  <p class="sub">体验"在知乎文章页点一下，内容就被读到"的机制（当前是安全的演示版：只读取并本地展示，<b>不发送任何数据</b>）</p>
+
+  <div class="step">
+    <b>第 1 步</b>：把下面这个绿色按钮 <b>拖动到浏览器书签栏</b>（直接拖，不要点击）<br>
+    <a class="bookmarklet" href="javascript:(function(){var el=document.querySelector('.RichContent-inner')||document.querySelector('.Post-RichText')||document.querySelector('.RichText');if(!el){alert('没找到正文——请在知乎的回答或文章页面使用这个书签');return;}var t=(el.innerText||'').trim();alert('✓ 蒸馏器工作正常！\n\n标题：'+document.title.slice(0,50)+'\n\n正文：'+t.length+' 字\n\n开头预览：\n'+t.slice(0,100)+'…\n\n（演示版：仅在本地展示，未发送任何数据）');})();">🧪 蒸馏这篇文章</a><br>
+    <span class="hint">如果拖不动：也可以右键书签栏 →「添加页面」→ 名称填"蒸馏这篇文章"，地址粘贴：<code>javascript:(function(){...})();</code>（完整代码见下方）</span>
+  </div>
+
+  <div class="step">
+    <b>第 2 步</b>：打开任意一篇知乎回答或专栏文章（你收藏里的那些）<br>
+    <span class="hint">例：https://www.zhihu.com/answer/2075283529018222179</span>
+  </div>
+
+  <div class="step">
+    <b>第 3 步</b>：在知乎页面上，<b>点一下书签栏里那个绿色按钮</b><br>
+    预期效果：弹窗显示 <b>"✓ 蒸馏器工作正常！标题：… 正文：3726 字 …"</b><br>
+    <span class="hint">看到具体字数 = 全文确实被读到了。这就是整个方案的核心能力。</span>
+  </div>
+
+  <div class="note">
+    <b>说明</b>：演示版不发送数据（弹窗展示完就结束）。正式版会把正文发到知识蒸馏站的后端，文章就出现在你的列表里——要不要做正式版由你决定。
+  </div>
+
+  <h3 style="margin-top:30px;font-size:16px;">书签的完整代码（供参考）</h3>
+  <pre style="background:#22301f;color:#d9e6d2;padding:16px;border-radius:10px;font-size:12px;overflow-x:auto;white-space:pre-wrap;">javascript:(function(){
+  var el = document.querySelector('.RichContent-inner')
+        || document.querySelector('.Post-RichText')
+        || document.querySelector('.RichText');
+  if (!el) { alert('没找到正文——请在知乎的回答或文章页面使用'); return; }
+  var text = (el.innerText || '').trim();
+  alert('✓ 蒸馏器工作正常！\n\n标题：' + document.title.slice(0,50)
+      + '\n\n正文：' + text.length + ' 字'
+      + '\n\n开头预览：\n' + text.slice(0,100) + '…');
+})();</pre>
+</body>
+</html>

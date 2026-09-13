@@ -45,6 +45,10 @@
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="12,7.5 12,12 15,13.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             学习记录
           </a>
+          <button class="nav-item nav-button" id="nav-bookmark">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 3.5 H18 V20 L12 15.5 L6 20 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+            蒸馏书签
+          </button>
         </nav>
 
         <div class="user-block" id="user-block">
@@ -98,11 +102,50 @@
         <span class="state-icon">🔗</span>
         <p id="login-text">连接你的知乎收藏夹，开始蒸馏。</p>
         <button class="btn-primary" id="login-btn">连接我的知乎收藏夹</button>
+        <button class="btn-ghost" id="login-bookmark-btn">🔖 了解「蒸馏书签」</button>
       </div>
 
       <!-- 底部分页器（浮动） -->
       <nav class="pager" id="pager" hidden aria-label="分页"></nav>
     </main>
+  </div>
+
+  <!-- 蒸馏书签 · 使用教程弹窗 -->
+  <div class="modal" id="bookmark-modal" hidden>
+    <div class="modal-backdrop" id="bookmark-modal-backdrop"></div>
+    <div class="modal-panel">
+      <button class="modal-close" id="bookmark-modal-close" aria-label="关闭">×</button>
+      <h3 class="modal-title">🔖 蒸馏书签 —— 把知乎文章全文送进来</h3>
+      <p class="modal-sub">收藏列表给的是摘要。<b>想要某篇文章的全文</b>做深度学习？用这个书签：</p>
+      <ol class="tutorial">
+        <li>
+          <b>把它拖进书签栏</b>（一次性，5 秒）<br>
+          <span class="bookmarklet-wrap">
+            <a class="bookmarklet" id="bookmarklet-link" href="javascript:void(0)" draggable="true">🧪 蒸馏这篇文章</a>
+          </span>
+          <p class="hint">拖不动？右键书签栏 →「添加页面」→ 名称随意，网址粘贴下方代码（点击可复制）</p>
+          <textarea class="bookmarklet-code" id="bookmarklet-code" readonly rows="3"></textarea>
+          <button class="btn-ghost btn-small" id="copy-bookmarklet">复制书签代码</button>
+        </li>
+        <li>
+          <b>去知乎点它</b>：打开任意知乎回答或文章 → 点书签栏里的它 → 弹窗确认"蒸馏这篇文章？"→ 点确定
+        </li>
+        <li>
+          <b>回来看结果</b>：文章全文已进入蒸馏站，列表里会亮起「✓ 已蒸馏」标记，点击可读全文
+        </li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- 全文查看弹窗 -->
+  <div class="modal" id="fulltext-modal" hidden>
+    <div class="modal-backdrop" id="fulltext-backdrop"></div>
+    <div class="modal-panel modal-panel-wide">
+      <button class="modal-close" id="fulltext-close" aria-label="关闭">×</button>
+      <h3 class="modal-title" id="fulltext-title"></h3>
+      <p class="modal-sub" id="fulltext-meta"></p>
+      <div class="fulltext-body" id="fulltext-body"></div>
+    </div>
   </div>
 
   <script src="/app.js"></script>

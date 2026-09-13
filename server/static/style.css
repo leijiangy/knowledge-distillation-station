@@ -252,6 +252,54 @@ body {
 .pop-page:hover { background: rgba(47, 122, 61, .09); color: var(--green); }
 .pop-page.active { background: var(--green); color: #f6fbf3; font-weight: 700; }
 
+/* ---- 弹窗（教程 / 全文查看） ---- */
+.modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(28, 38, 26, .42); backdrop-filter: blur(2px); }
+.modal-panel {
+  position: relative; width: 100%; max-width: 520px; max-height: 84vh; overflow-y: auto;
+  background: #fdfcf8; border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 24px 64px -24px rgba(20, 30, 18, .5); padding: 26px 28px 24px;
+}
+.modal-panel-wide { max-width: 720px; }
+.modal-close {
+  position: absolute; top: 14px; right: 14px; width: 30px; height: 30px;
+  border: 0; border-radius: 8px; background: none; color: var(--ink-3);
+  font-size: 20px; line-height: 1; cursor: pointer; font-family: inherit;
+}
+.modal-close:hover { background: rgba(47, 122, 61, .08); color: var(--ink); }
+.modal-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; padding-right: 30px; }
+.modal-sub { color: var(--ink-2); font-size: 13.5px; margin-bottom: 16px; }
+.tutorial { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 16px; font-size: 13.5px; color: var(--ink-2); }
+.tutorial li b { color: var(--ink); }
+.bookmarklet-wrap { display: inline-block; margin: 10px 0 6px; }
+.bookmarklet {
+  display: inline-block; background: var(--green); color: #f6fbf3; text-decoration: none;
+  padding: 9px 20px; border-radius: 9px; font-weight: 700; font-size: 13.5px;
+  border: 2px dashed rgba(255, 255, 255, .55); cursor: grab;
+}
+.bookmarklet:active { cursor: grabbing; }
+.hint { color: var(--ink-3); font-size: 12px; margin: 4px 0 6px; }
+.bookmarklet-code {
+  width: 100%; background: #22301f; color: #d9e6d2; border: 0; border-radius: 8px;
+  padding: 10px 12px; font-size: 11px; font-family: ui-monospace, Consolas, monospace;
+  resize: vertical; margin-bottom: 8px;
+}
+.btn-small { padding: 4px 12px; font-size: 12px; }
+.fulltext-body {
+  max-height: 58vh; overflow-y: auto; white-space: pre-wrap; line-height: 2;
+  font-size: 14px; color: var(--ink); border-top: 1px dashed var(--line); padding-top: 14px;
+}
+
+/* ---- 已蒸馏徽章（卡片内） ---- */
+.distill-badge {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+  background: rgba(47, 122, 61, .10); color: var(--green);
+  border: 1px solid rgba(47, 122, 61, .25); border-radius: 999px;
+  padding: 3px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: inherit;
+}
+.distill-badge:hover { background: rgba(47, 122, 61, .16); }
+
 /* ---- 状态盒 ---- */
 .state-box {
   display: flex; flex-direction: column; align-items: center; gap: 14px;

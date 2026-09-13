@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -14,6 +15,14 @@ from core.cache import content_cache, user_cache, user_key
 from core import analyze, oauth, zhihu
 
 app = FastAPI(title=settings.PROJECT_NAME, docs_url=None, redoc_url=None)
+
+# 书签小工具从 zhihu.com 页面跨域 POST 内容进来，需要放行 CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -273,6 +282,55 @@ async def article_meta(request: Request):
         meta_map[url] = meta
         await asyncio.sleep(0.15)  # 温和限速，避免触发风控
     return {"ok": True, "meta": meta_map}
+
+
+# ---- 书签小工具：全文接收与存储（演示阶段为内存存储，后续接 T9 持久化） ----
+distilled_store: dict = {}   # 内容 URL(去参) -> {title, url, content, at}
+DISTILL_MAX_CHARS = 200_000
+
+
+@app.post("/api/ingest")
+async def ingest(request: Request):
+    """接收书签小工具从知乎页面送来的全文（用户在知乎页面主动确认后触发）"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    url = str(body.get("url") or "").strip()
+    title = str(body.get("title") or "").strip()[:200]
+    content = str(body.get("content") or "").strip()
+    if not url or "zhihu.com" not in url:
+        return {"ok": False, "error": {"code": "BAD_URL", "message": "需要知乎内容链接。"}}
+    if len(content) < 100:
+        return {"ok": False, "error": {"code": "TOO_SHORT", "message": "内容过短，可能不是文章页。"}}
+    if len(content) > DISTILL_MAX_CHARS:
+        return {"ok": False, "error": {"code": "TOO_LONG", "message": "内容过长。"}}
+    key = url.split("?")[0]
+    distilled_store[key] = {"title": title, "url": url, "content": content, "at": int(time.time())}
+    return {"ok": True, "length": len(content), "total": len(distilled_store)}
+
+
+@app.get("/api/distilled")
+async def distilled_index():
+    """已蒸馏内容索引（供列表打标：哪些收藏已有全文）"""
+    return {
+        "ok": True,
+        "items": {
+            k: {"title": v["title"], "length": len(v["content"]), "at": v["at"]}
+            for k, v in distilled_store.items()
+        },
+    }
+
+
+@app.get("/api/distilled/content")
+async def distilled_content(url: str):
+    """读取某篇已蒸馏文章的全文"""
+    key = url.split("?")[0]
+    item = distilled_store.get(key)
+    if not item:
+        return {"ok": False, "error": {"code": "NOT_FOUND", "message": "这篇还没有全文，试试书签工具。"}}
+    return {"ok": True, "title": item["title"], "url": item["url"],
+            "content": item["content"], "length": len(item["content"]), "at": item["at"]}
 
 
 # 静态文件（前端单页）——挂在最后，避免吞掉 /api 与 /auth 路由
