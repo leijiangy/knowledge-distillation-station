@@ -56,7 +56,10 @@
     return [
       "javascript:(function(){",
       "var el=document.querySelector('.RichContent-inner')||document.querySelector('.Post-RichText')||document.querySelector('.RichText');",
-      "if(!el){alert('请在知乎的回答或文章页面使用这个书签');return;}",
+      "if(!el){",
+      "var isZhihu=location.hostname.indexOf('zhihu.com')>=0;",
+      "if(confirm((isZhihu?'这个知乎页面不是回答或文章。':'当前页面不是知乎。')+'\\n\\n要打开知识蒸馏站主页吗？')){location.href='" + origin + "/';}",
+      "return;}",
       "var text=(el.innerText||'').trim();",
       "var title=(document.title||'').replace(/ ?[-—|] ?知乎.*$/,'').trim();",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
