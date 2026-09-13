@@ -105,6 +105,14 @@ description: 知识蒸馏站开发过程中踩过的坑与解法（Windows 环�
 - **结论**：**不采用**。理由：① 首次配置更麻烦（进设置页填三个框 ≈1 分钟 vs 拖书签 5 秒）；② 日常操作不更快（敲 zl+回车 vs 点一下书签）；③ 大概率被 Edge 拦（前缀剥离现象；URL 校验与导航拦截两层防护）；④ 收益仅"不占书签栏"，不值代价
 - **最终形态**：首页教程给出两种安装方式——拖拽按钮进书签栏（主）/「复制书签」后粘贴进书签栏（兜底，拖拽失灵时用）；不再探索其他分发方式
 
+## 17. CloudBase 环境 ID 与"控制台网址里的值"不一致（致命坑）
+
+- **现象**：用控制台网址 `?envId=` 参数里的值拼 REST 网关域名（`https://<envId>.api.tcloudbasegateway.com/v1/rdb/rest/<table>`），一律返回 `404 INVALID_ENV`
+- **原因**：网址里显示的值与环境实际 ID **不一致**，且差异极细微（`zhishizhizengliuzhan-d2co6jd1d0021` vs 实际 `zhishizhengliuzhan-d2coj6d1d0021`，肉眼几乎无法分辨）
+- **解法**：以**概览页"环境 ID"字段**或控制台 Agent 查询结果为准；最快的定位方法是用两个候选值各发一次请求实测（正确值返回 200，错误值返回 INVALID_ENV）
+- **附带知识**：CloudBase 共享集群（体验版）**不支持数据库直连**（内网/外网地址均不提供）；官方接入方式是 **REST API（PostgREST 规范）+ 服务端 API Key**（service_role 角色，在「环境管理 → API Key 配置 → 服务端 API Key」创建）。文档：`docs.cloudbase.net/http-api/pgdb/postgresql-restful-api`
+- **实现要点**：写入用 `POST /v1/rdb/rest/<table>` + `Prefer: resolution=merge-duplicates`（upsert）+ `Content-Type: application/json`；认证头 `Authorization: Bearer <API Key>`
+
 ---
 
 新坑随时追加到本文件，格式保持「坑 → 现象 → 解法」。
