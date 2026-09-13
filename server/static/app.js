@@ -115,7 +115,6 @@
     const m = item.metrics || {};
     const author = item.Author && item.Author.Name ? item.Author.Name : "";
     const initial = author ? author.slice(0, 1) : "·";
-    const headline = (item.Author && item.Author.Headline) ? item.Author.Headline : "";
     const labels = ["approval", "richness", "credibility"].map((kind) => {
       const metric = m[kind] || {};
       const basis = (metric.basis || []).join(" · ");
@@ -126,6 +125,12 @@
         <a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>
         <div class="meta">
           <span class="tag">${TYPE_NAMES[item.ContentType] || item.ContentType || "内容"}</span>
+          <span class="meta-author">
+            <span class="author-avatar" style="background:${authorColor(author)}">${escapeHtml(initial)}</span>
+            <b class="author-name">${escapeHtml(author || "未知作者")}</b>
+            <img class="author-badge" alt="" hidden>
+            <span class="author-badge-text" hidden></span>
+          </span>
           <span>${formatDate(item.FavTime)}</span>
         </div>
         <div class="card-main">
@@ -133,17 +138,6 @@
           <div class="card-radar">
             ${radarSvg(m)}
             <div class="radar-labels">${labels}</div>
-          </div>
-        </div>
-        <div class="card-author">
-          <span class="author-avatar" style="background:${authorColor(author)}">${escapeHtml(initial)}</span>
-          <div class="author-info">
-            <div class="author-line">
-              <b class="author-name">${escapeHtml(author || "未知作者")}</b>
-              <img class="author-badge" alt="" hidden>
-              <span class="author-badge-text" hidden></span>
-            </div>
-            <div class="author-headline">${escapeHtml(headline)}</div>
           </div>
         </div>
         <div class="foot">依据：收藏 ${item.FavoriteCount || 0} · 赞同 ${item.LikeCount || 0} · 评论 ${item.CommentCount || 0}</div>
@@ -239,10 +233,9 @@
       badgeText.textContent = meta.badge_text;
       badgeText.hidden = false;
     }
-    const headline = card.querySelector(".author-headline");
-    if (headline && !headline.textContent.trim() && meta.signature) {
-      headline.textContent = meta.signature;
-    }
+    // 作者签名：meta 行空间有限，作为悬浮提示展示
+    const wrap = card.querySelector(".meta-author");
+    if (wrap && meta.signature) wrap.title = meta.signature;
   }
 
   // 页码序列（超过 5 页时折叠中间部分为省略号）
