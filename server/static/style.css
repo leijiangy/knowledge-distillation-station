@@ -11,6 +11,7 @@
   --teal: #337a6e;
   --line: #e6dfd6;
   --line-card: #ccd6c6;
+  --content-pad: 30px;   /* 内容区左右留白（表头横线用它反推全宽） */
   --noise: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
 }
 
@@ -128,11 +129,14 @@ body {
 .user-meta small { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- 内容区 ---- */
-.content { flex: 1; min-width: 0; padding: 26px 30px 40px; }
+.content { flex: 1; min-width: 0; padding: 26px var(--content-pad) 40px; }
 
 .toolbar {
   position: sticky; top: 0; z-index: 10;
-  padding-bottom: 10px;
+  /* 负外边距：横跨纸张全宽（横线左右连到纸边），内边距补回内容位置 */
+  margin-left: calc(var(--content-pad) * -1);
+  margin-right: calc(var(--content-pad) * -1);
+  padding: 0 var(--content-pad) 10px;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   border-bottom: 2px solid var(--ink);
   /* 滚动时表头悬浮：纸色毛玻璃底，内容从下方滚过被遮挡 */
@@ -221,7 +225,7 @@ body {
   .loaded-badge { display: none; }
 }
 @media (max-width: 720px) {
-  .content { padding: 18px 16px 30px; }
+  :root { --content-pad: 16px; }
   .toolbar { flex-direction: column; align-items: flex-start; }
   .card-main { gap: 10px; }
 }
