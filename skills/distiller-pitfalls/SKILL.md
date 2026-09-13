@@ -11,11 +11,18 @@ description: 知识蒸馏站开发过程中踩过的坑与解法（Windows 环�
 - **原因**：脚本硬编码 `/usr/bin/unzip`、`/bin/bash`、`/usr/bin/security`（macOS 钥匙串）
 - **解法**：Windows 用 `skills/zhihu-v2026s2/win_init.mjs` + `win_finalize.mjs` 等价初始化（含同样的 SHA-256 校验）；app_key 不进钥匙串，走 `.env` 环境变量——官方 `lib/oauth.mjs` 原生优先读环境变量（第 92-93 行）
 
-## 2. ZCode 沙箱网络：只有 gh.exe 的 API 流量能出网
+## 2. 沙箱网络访问 GitHub
 
-- **现象**：`git push/fetch` 直连 GitHub 超时或 Connection reset；`curl` 直连外网超时；但 `gh api` 一切正常
-- **原因**：沙箱按进程放行网络，git.exe/curl.exe 被拦
-- **解法**：GitHub 同步用 `gh api`（contents API 传文件 / git data API 构造提交）；或让用户在自己终端跑 git（他的终端没有此限制）
+- **现象**：之前 `git push/fetch` 直连 GitHub 超时或 Connection reset；`gh api` 一切正常
+- **原因**：沙箱对 git.exe/curl.exe 的网络放行策略不稳定（随宿主网络环境变化）
+- **当前可用姿势（2026-09-13 实测）**：以下组合命令在沙箱内可正常 fetch/push：
+
+  ```cmd
+  set GIT_SSL_CAINFO=&& git -c http.proxy= -c https.proxy= push origin main
+  ```
+
+  即：清空 ZCode CA 变量 + 绕开全局代理直连。若再次失败，备用方案是用 `gh api` 同步（contents API 传文件 / git data API 构造提交）。
+- **注意**：远端 main 曾被本地完整历史 `--force-with-lease` 覆盖过（远端原为 API 生成的独立历史）。**若队友此前 clone 过旧版，需要重新 clone 或 `git fetch && git reset --hard origin/main`**。
 
 ## 3. git 全局代理指向失效端口
 
