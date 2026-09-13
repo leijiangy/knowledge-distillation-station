@@ -204,24 +204,24 @@ body {
 .radar-labels b { color: #14180f; font-weight: 700; margin-left: 3px; }
 .foot { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 7px; color: var(--ink-3); font-size: 11.5px; }
 
-/* ---- 底部分页器（纸张窗口内悬浮：滚动时跟随，但不超出纸的边界） ---- */
+/* ---- 底部分页器（纸内悬浮，弱视觉层级：不抢内容主体） ---- */
 .pager {
   position: sticky; bottom: 18px; z-index: 30;
   width: fit-content; margin: 26px auto 0;
-  display: flex; align-items: center; gap: 3px;
-  padding: 6px 10px; border-radius: 999px;
-  background: rgba(253, 252, 248, .97);
-  border: 1px solid rgba(47, 122, 61, .16);
-  box-shadow: 0 12px 32px -14px rgba(30, 40, 28, .35), 0 2px 6px rgba(30, 40, 28, .06);
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px 8px; border-radius: 999px;
+  background: rgba(253, 252, 248, .92);
+  border: 1px solid rgba(47, 122, 61, .10);
+  box-shadow: 0 4px 14px -10px rgba(30, 40, 28, .25);
 }
 .pager-btn {
-  min-width: 30px; height: 30px; padding: 0 9px; border: 0; border-radius: 999px;
-  background: none; color: var(--ink-2); font-size: 13px; cursor: pointer;
+  min-width: 28px; height: 28px; padding: 0 8px; border: 0; border-radius: 999px;
+  background: none; color: var(--ink-3); font-size: 12.5px; cursor: pointer;
   font-family: inherit; line-height: 1;
 }
-.pager-btn:hover:not(:disabled) { background: rgba(47, 122, 61, .09); color: var(--green); }
-.pager-btn.active { background: var(--green); color: #f6fbf3; font-weight: 700; }
-.pager-btn:disabled { opacity: .35; cursor: default; }
+.pager-btn:hover:not(:disabled) { background: rgba(47, 122, 61, .07); color: var(--green); }
+.pager-btn.active { background: rgba(47, 122, 61, .13); color: var(--green); font-weight: 700; }
+.pager-btn:disabled { opacity: .3; cursor: default; }
 
 /* 省略号浮层：窗口内小面板（贴着分页器上方弹出） */
 .pager-pop {
