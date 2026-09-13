@@ -113,13 +113,22 @@ main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 20px 
 .card {
   background: var(--card); border: 1px solid var(--line);
   border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 16px 18px 12px; display: flex; gap: 12px; align-items: stretch;
+  padding: 16px 18px 12px;
   transition: border-color .15s, transform .15s, box-shadow .15s;
 }
 .card:hover {
   border-color: #c9d4e5; transform: translateY(-2px);
   box-shadow: 0 8px 28px rgba(16, 24, 40, .09);
 }
+/* 标题独占整行 */
+.card-title {
+  display: block; font-size: 15.5px; font-weight: 650; color: var(--ink);
+  text-decoration: none; line-height: 1.5; margin-bottom: 10px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.card-title:hover { color: var(--blue); }
+/* 内容与雷达图左右并列 */
+.card-main { display: flex; gap: 14px; align-items: center; }
 .card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .card-meta {
   font-size: 12.5px; color: var(--ink-3); display: flex; gap: 10px;
@@ -128,19 +137,14 @@ main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 20px 
 .card-meta .type-tag {
   background: #f3f4f6; padding: 1px 8px; border-radius: 6px; color: var(--ink-2);
 }
-.card-title {
-  font-size: 15.5px; font-weight: 650; color: var(--ink); text-decoration: none;
-  line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.card-title:hover { color: var(--blue); }
 .card-summary {
   font-size: 13px; color: var(--ink-2); margin-top: 8px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
-/* ---- 雷达图（卡片右下角） ---- */
-.card-radar { flex: 0 0 138px; display: flex; align-items: flex-end; justify-content: flex-end; }
-.radar { width: 138px; height: auto; }
+/* ---- 雷达图（小尺寸，与内容并列） ---- */
+.card-radar { flex: 0 0 84px; display: flex; align-items: center; justify-content: center; }
+.radar { width: 84px; height: auto; }
 .radar-grid { fill: none; stroke: #e8eaee; stroke-width: 1; }
 .radar-spoke { stroke: #e8eaee; stroke-width: 1; }
 .radar-area {
@@ -148,8 +152,6 @@ main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 20px 
   stroke-width: 1.6; stroke-linejoin: round;
 }
 .radar-dot { fill: var(--blue); }
-.radar-name { font-size: 10.5px; fill: var(--ink-3); }
-.radar-value { font-size: 12.5px; font-weight: 700; fill: var(--ink); }
 
 /* ---- 图例（hover 显示计算依据） ---- */
 .card-legend {

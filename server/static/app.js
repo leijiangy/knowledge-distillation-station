@@ -56,45 +56,38 @@
   const METRIC_NAMES = { approval: "认可度", richness: "信息量", credibility: "准确性" };
 
   function radarSvg(metrics) {
-    // 三轴等边三角雷达图（纯 SVG，无依赖）：上=认可度，右下=信息量，左下=准确性
-    const W = 170, H = 152, cx = 85, cy = 80, R = 40;
+    // 紧凑三轴雷达图（仅形状，无文字标签）：上=认可度，右下=信息量，左下=准确性
+    const W = 78, H = 70, cx = 39, cy = 41, R = 34;
     const rad = (deg) => (deg * Math.PI) / 180;
     const pt = (angle, radius) => [
       cx + radius * Math.cos(rad(angle)),
       cy + radius * Math.sin(rad(angle)),
     ];
     const axes = [
-      ["认可度", metrics.approval?.score ?? 0, -90],
-      ["信息量", metrics.richness?.score ?? 0, 30],
-      ["准确性", metrics.credibility?.score ?? 0, 150],
+      [metrics.approval?.score ?? 0, -90],
+      [metrics.richness?.score ?? 0, 30],
+      [metrics.credibility?.score ?? 0, 150],
     ];
 
     let grid = "";
     for (const level of [0.25, 0.5, 0.75, 1]) {
-      const pts = axes.map(([, , a]) => pt(a, R * level).map((v) => v.toFixed(1)).join(",")).join(" ");
+      const pts = axes.map(([, a]) => pt(a, R * level).map((v) => v.toFixed(1)).join(",")).join(" ");
       grid += `<polygon points="${pts}" class="radar-grid"/>`;
     }
-    const spokes = axes.map(([, , a]) => {
+    const spokes = axes.map(([, a]) => {
       const [x, y] = pt(a, R);
       return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="radar-spoke"/>`;
     }).join("");
-    const dataPts = axes.map(([, v, a]) => pt(a, (R * Math.min(100, v)) / 100).map((v2) => v2.toFixed(1)).join(",")).join(" ");
-    const dots = axes.map(([, v, a]) => {
+    const dataPts = axes.map(([v, a]) => pt(a, (R * Math.min(100, v)) / 100).map((v2) => v2.toFixed(1)).join(",")).join(" ");
+    const dots = axes.map(([v, a]) => {
       const [x, y] = pt(a, (R * Math.min(100, v)) / 100);
-      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" class="radar-dot"/>`;
-    }).join("");
-    const labels = axes.map(([name, v, a]) => {
-      const [x, y] = pt(a, R + 16);
-      const anchor = a === -90 ? "middle" : a === 30 ? "start" : "end";
-      const dy = a === -90 ? -10 : 6;
-      return `<text x="${x.toFixed(1)}" y="${(y + dy).toFixed(1)}" text-anchor="${anchor}" class="radar-name">${name}</text>
-              <text x="${x.toFixed(1)}" y="${(y + dy + 13).toFixed(1)}" text-anchor="${anchor}" class="radar-value">${v}</text>`;
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" class="radar-dot"/>`;
     }).join("");
 
-    return `<svg class="radar" viewBox="0 0 ${W} ${H}" role="img" aria-label="三指标雷达图">
+    return `<svg class="radar" viewBox="0 0 ${W} ${H}" role="img" aria-label="三指标雷达图（上认可度 / 右下信息量 / 左下准确性）">
       ${grid}${spokes}
       <polygon points="${dataPts}" class="radar-area"/>
-      ${dots}${labels}
+      ${dots}
     </svg>`;
   }
 
@@ -110,17 +103,19 @@
     }).join("");
     return `
       <article class="card">
-        <div class="card-body">
-          <div class="card-meta">
-            <span class="type-tag">${TYPE_NAMES[item.ContentType] || item.ContentType || "内容"}</span>
-            ${author ? `<span>${escapeHtml(author)}</span>` : ""}
-            <span>${formatDate(item.FavTime)}</span>
+        <a class="card-title" href="${item.Url}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>
+        <div class="card-main">
+          <div class="card-body">
+            <div class="card-meta">
+              <span class="type-tag">${TYPE_NAMES[item.ContentType] || item.ContentType || "内容"}</span>
+              ${author ? `<span>${escapeHtml(author)}</span>` : ""}
+              <span>${formatDate(item.FavTime)}</span>
+            </div>
+            ${item.Summary ? `<p class="card-summary">${escapeHtml(item.Summary)}</p>` : ""}
+            <div class="card-legend">${legend}</div>
           </div>
-          <a class="card-title" href="${item.Url}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>
-          ${item.Summary ? `<p class="card-summary">${escapeHtml(item.Summary)}</p>` : ""}
-          <div class="card-legend">${legend}</div>
+          <div class="card-radar">${radarSvg(m)}</div>
         </div>
-        <div class="card-radar">${radarSvg(m)}</div>
       </article>`;
   }
 
