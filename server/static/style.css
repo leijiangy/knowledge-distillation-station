@@ -289,9 +289,9 @@ body {
 }
 
 /* ---- 卡片配图 ---- */
-/* 单图：摘要左侧小缩略图 */
+/* 单图：摘要左侧缩略图（与摘要区域等高） */
 .card-thumb {
-  flex: 0 0 84px; width: 84px; height: 84px; object-fit: cover;
+  flex: 0 0 120px; width: 120px; height: 120px; object-fit: cover;
   border-radius: 4px; border: 1px solid var(--line); background: #eef3ea;
 }
 /* 多图：摘要下方，三张方形并排（1:1 裁剪，参照知乎想法） */
