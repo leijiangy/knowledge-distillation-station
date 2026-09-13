@@ -156,18 +156,19 @@ async def favlists(request: Request):
 
 
 @app.get("/api/collections")
-async def collections(request: Request, favlist: str | None = None):
+async def collections(request: Request, favlist: str | None = None, force: int = 0):
     """收藏全量读取（分页取全 + 用户私有缓存 + 三指标）。
 
-    favlist 缺省时取用户第一个收藏夹。
+    favlist 缺省时取用户第一个收藏夹；force=1 时绕过用户缓存主动取新数据（用户点「刷新」）。
     """
     session = _current_session(request)
     token = session.token if session else None
     uid = str((session.profile or {}).get("uid") or "anon") if session else "self"
     cache_key = user_key("collections:" + str(favlist or "first"), uid)
-    cached = user_cache.get(cache_key)
-    if cached is not None:
-        return {"ok": True, "cached": True, **cached}
+    if not force:
+        cached = user_cache.get(cache_key)
+        if cached is not None:
+            return {"ok": True, "cached": True, **cached}
     try:
         fav_meta = None
         if favlist:

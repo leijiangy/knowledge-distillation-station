@@ -44,11 +44,12 @@ class TTLCache:
         self._data.clear()
 
 
-# 内容键共享区：用户私有数据之外的蒸馏成果（TTL 30 分钟）
-content_cache = TTLCache(ttl_seconds=30 * 60)
+# 内容键共享区：用户私有数据之外的蒸馏成果（TTL 1 天）
+content_cache = TTLCache(ttl_seconds=24 * 3600)
 
-# 用户键私有区：收藏列表等（TTL 10 分钟，配合每日额度 100 次）
-user_cache = TTLCache(ttl_seconds=10 * 60, max_entries=500)
+# 用户键私有区：收藏列表等（TTL 1 天，团队决定：额度优先；
+# 用户点「刷新」时前端传 force=1 绕过缓存主动取新数据）
+user_cache = TTLCache(ttl_seconds=24 * 3600, max_entries=500)
 
 
 def user_key(scope: str, user_id: str | None) -> str:

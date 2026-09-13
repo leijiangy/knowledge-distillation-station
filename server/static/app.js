@@ -109,7 +109,7 @@
     showState("Loading");
     els.loadingText.textContent = "正在读取你的收藏夹（分页取全中）……";
     try {
-      const data = await api("/api/collections" + (force ? "?t=" + Date.now() : ""));
+      const data = await api("/api/collections" + (force ? "?force=1" : ""));
       if (!data.ok) throw new Error(data.error?.message || "读取收藏夹失败");
       allItems = data.items || [];
       els.favlistTitle.textContent = data.favlist?.Title || "我的收藏";

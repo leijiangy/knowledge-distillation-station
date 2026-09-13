@@ -30,7 +30,7 @@ description: 知识蒸馏站（知乎黑客松 2026 参赛项目）的项目上�
         ├─ /api/oauth/*      登录、回调、会话（core/oauth.py）
         ├─ /api/favlists     收藏夹列表
         ├─ /api/collections  收藏全量分页读取 + 三指标（core/zhihu.py + analyze.py）
-        └─ 两级缓存（core/cache.py）：内容键全站共享 + 用户键私有，TTL
+        └─ 两级缓存（core/cache.py）：内容键全站共享 + 用户键私有，**TTL 均 1 天**（团队决策：额度优先；用户点「刷新」传 force=1 绕过用户缓存）
 ```
 
 - 依赖仅 fastapi / uvicorn / httpx（requirements.txt）；测试用 pytest
