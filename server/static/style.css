@@ -273,9 +273,10 @@ body {
 .bookmarklet {
   display: inline-block; background: var(--green); color: #f6fbf3; text-decoration: none;
   padding: 9px 20px; border-radius: 9px; font-weight: 700; font-size: 13.5px;
-  border: 2px dashed rgba(255, 255, 255, .55); cursor: grab;
+  border: none; box-shadow: 0 3px 8px -3px rgba(47, 122, 61, .55); cursor: grab;
 }
-.bookmarklet:active { cursor: grabbing; }
+.bookmarklet:hover { background: var(--green-dark); }
+.bookmarklet:active { cursor: grabbing; box-shadow: 0 1px 3px -1px rgba(47, 122, 61, .5); transform: translateY(1px); }
 .hint { color: var(--ink-3); font-size: 12px; margin: 4px 0 6px; }
 .bookmarklet-code {
   width: 100%; background: #22301f; color: #d9e6d2; border: 0; border-radius: 8px;
