@@ -30,8 +30,13 @@ description: 知识蒸馏站（知乎黑客松 2026 参赛项目）的项目上�
         ├─ /api/oauth/*      登录、回调、会话（core/oauth.py）
         ├─ /api/favlists     收藏夹列表
         ├─ /api/collections  收藏全量分页读取 + 三指标（core/zhihu.py + analyze.py）
-        └─ 两级缓存（core/cache.py）：内容键全站共享 + 用户键私有，**TTL 均 1 天**（团队决策：额度优先；用户点「刷新」传 force=1 绕过用户缓存）
+        └─ 两级缓存（core/cache.py）：内容键全站共享 + 用户键私有，**TTL 均 1 天**（团队决策：额度优先；用户点「刷新」传 force=1 绕过用户缓存）。favlists 与 collections 均已接入缓存
 ```
+
+**安全红线（P0 修复，不得回退）**：
+- `ALLOW_SELF_MODE` 默认关闭；仅本地 `.env` 显式设为 1 才允许未登录请求以本人身份读数据。**公网部署绝不设置该变量**，否则任何访客可读到项目账号的私密收藏。
+- `/api/favlists`、`/api/collections` 在未登录且开关关闭时一律返回 `LOGIN_REQUIRED`。
+- OAuth 回调 state 校验用 `core/oauth.py:check_state`（四态：missing/mismatch 拒绝，verified 通过，unverified 容忍但标记），有测试覆盖。
 
 - 依赖仅 fastapi / uvicorn / httpx（requirements.txt）；测试用 pytest
 - AI 能力用 DeepSeek（OpenAI 兼容接口，密钥 `DEEPSEEK_API_KEY`）——学习会话接入时使用

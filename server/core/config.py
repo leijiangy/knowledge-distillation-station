@@ -7,11 +7,25 @@ ROOT = Path(__file__).resolve().parent.parent  # server/
 
 
 def load_env_file() -> None:
-    """加载 server/.env（该文件被 .gitignore 忽略，绝不入库）"""
+    """加载 server/.env（该文件被 .gitignore 忽略，绝不入库）。
+
+    编码容错：优先 UTF-8，失败回退 GBK（Windows 记事本/CMD 编辑可能存成 GBK），
+    避免一份配置文件让整个服务起不来。
+    """
     env_file = ROOT / ".env"
     if not env_file.exists():
         return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
+    raw = env_file.read_bytes()
+    text = None
+    for encoding in ("utf-8", "gbk"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        text = raw.decode("utf-8", errors="replace")
+    for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -45,6 +59,10 @@ class Settings:
     ZHIHU_API = "https://developer.zhihu.com"
     ZHIHU_OAUTH = "https://openapi.zhihu.com"
     DEEPSEEK_API = "https://api.deepseek.com"
+
+    # 本地开发调试开关：允许未登录请求以 Access Secret 本人身份读取数据。
+    # ⚠️ 默认关闭。公网部署绝不能开启——否则任何访客都能读到项目账号的私密收藏。
+    ALLOW_SELF_MODE = os.environ.get("ALLOW_SELF_MODE") == "1"
 
     # 会话
     SESSION_COOKIE = "kd_session"

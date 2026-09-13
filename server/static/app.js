@@ -110,7 +110,11 @@
     els.loadingText.textContent = "正在读取你的收藏夹（分页取全中）……";
     try {
       const data = await api("/api/collections" + (force ? "?force=1" : ""));
-      if (!data.ok) throw new Error(data.error?.message || "读取收藏夹失败");
+      if (!data.ok) {
+        const error = new Error(data.error?.message || "读取收藏夹失败");
+        error.code = data.error?.code;
+        throw error;
+      }
       allItems = data.items || [];
       els.favlistTitle.textContent = data.favlist?.Title || "我的收藏";
       els.countBadge.textContent = `${data.count} 条`;
@@ -125,6 +129,10 @@
       els.workspace.hidden = false;
       renderCards();
     } catch (err) {
+      if (err.code === "LOGIN_REQUIRED") {
+        showHero("请先登录知乎账号，查看属于你自己的收藏。", false);
+        return;
+      }
       showState("Error");
       els.errorText.textContent = err.message || "出了点问题，请重试。";
     }

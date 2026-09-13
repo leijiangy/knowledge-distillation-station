@@ -78,9 +78,25 @@ async def fetch_favlist_contents(favlist_token: int | str, oauth_token: str | No
     )
 
 
+def parse_next_offset(paging: dict) -> int | None:
+    """解析 Paging.NextOffset（服务端为 String，需严格转 int）。
+
+    缺失或解析失败一律返回 None —— 调用方应停止翻页，不猜测、不静默截断。
+    """
+    if not isinstance(paging, dict):
+        return None
+    value = paging.get("NextOffset")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def fetch_all_favlist_contents(favlist_token: int | str, oauth_token: str | None = None,
                                      max_pages: int = 20, on_page=None) -> list:
-    """按 Paging 协议取全一个收藏夹（NextOffset 是 String，需转 int；解析失败即停）"""
+    """按 Paging 协议取全一个收藏夹"""
     items: list = []
     offset = 0
     for page in range(1, max_pages + 1):
@@ -92,11 +108,8 @@ async def fetch_all_favlist_contents(favlist_token: int | str, oauth_token: str 
         paging = data.get("Paging", {}) or {}
         if paging.get("IsEnd") or not page_items:
             break
-        next_offset = paging.get("NextOffset")
+        next_offset = parse_next_offset(paging)
         if next_offset is None:
-            break  # IsEnd=false 但缺 NextOffset：协议不完整，停止而非猜测
-        try:
-            offset = int(next_offset)
-        except (TypeError, ValueError):
-            break
+            break  # IsEnd=false 但 NextOffset 缺失/非法：协议不完整，停止而非猜测
+        offset = next_offset
     return items

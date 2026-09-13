@@ -86,6 +86,18 @@ description: 知识蒸馏站开发过程中踩过的坑与解法（Windows 环�
 - **原因**：CSS 里给该元素设了 `display: flex` 等，优先级高于 hidden 属性的 UA 样式
 - **解法**：样式表加一条 `[hidden] { display: none !important; }`（已加入 server/static/style.css）
 
+## 14. CMD echo 中文写入文件 = GBK 编码污染
+
+- **现象**：用 `echo 中文内容 >> .env` 追加后，Python 以 UTF-8 读取 `.env` 崩溃（`UnicodeDecodeError: invalid start byte`），服务起不来或测试收集失败
+- **原因**：CMD 的 echo 按系统代码页（GBK）写文件，UTF-8 读取器遇到 GBK 字节即失败
+- **解法**：① 写文件一律用编辑器/Write 工具（UTF-8），不要用 CMD echo 写中文；② `server/core/config.py` 的 `.env` 加载已加编码容错（UTF-8 失败回退 GBK）
+
+## 15. 匿名可读私密数据（P0，已修复）
+
+- **现象**：未登录访客调用 `/api/collections` 能拿到项目账号（Access Secret 持有者）的私密收藏夹内容
+- **原因**：为本地调试设计的「本人模式」在未登录时把 `X-OAuth-Token` 留空 → 按官方身份模型即以 Access Secret 本人身份查询；部署到公网即数据泄露
+- **解法**：加 `ALLOW_SELF_MODE` 开关（默认关闭）；关闭时匿名请求一律 `LOGIN_REQUIRED`。仅本地 `.env` 设为 1 供预览调试。**部署清单上必须有这一条**
+
 ---
 
 新坑随时追加到本文件，格式保持「坑 → 现象 → 解法」。

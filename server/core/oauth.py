@@ -18,6 +18,21 @@ def new_state() -> str:
     return secrets.token_urlsafe(24)
 
 
+def check_state(returned: str | None, expected: str | None) -> str:
+    """回调 state 校验（结果四态，调用方据此决定放行或拒绝）。
+
+    - missing:    未发起过登录（expected 缺失）→ 拒绝
+    - mismatch:   returned 与 expected 不一致 → 拒绝
+    - verified:   一致 → 通过（state 校验标记为已验证）
+    - unverified: 官方实测回调可能不回传 state，容忍但标记为未验证（仅联调可用）
+    """
+    if not expected:
+        return "missing"
+    if not returned:
+        return "unverified"
+    return "verified" if secrets.compare_digest(str(returned), str(expected)) else "mismatch"
+
+
 def build_authorize_url(state: str) -> str:
     if not settings.REDIRECT_URI:
         raise ZhihuError("DEPLOYMENT_REQUIRED", "本地地址无法完成知乎登录，请先部署并配置公网回调地址。")

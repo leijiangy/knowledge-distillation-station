@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """知识蒸馏站 —— FastAPI 应用入口与路由（对照官方 Node 模板的接口形态）"""
-import secrets
 import time
 from pathlib import Path
 
@@ -39,6 +38,24 @@ def _get_or_create(request: Request, response: Response):
         session = sessions.create()
         _attach_cookie(response, session)
     return session
+
+
+def _user_key_id(session) -> str:
+    """私有缓存的用户标识"""
+    return str((session.profile or {}).get("uid") or "anon") if session else "self"
+
+
+def _resolve_token(session):
+    """返回 (oauth_token, error)。
+
+    未登录时：仅当 ALLOW_SELF_MODE=1（本地调试开关）才允许以本人身份读取；
+    否则返回 LOGIN_REQUIRED —— 公网部署下任何匿名请求都必须被拒绝。
+    """
+    if session and session.token:
+        return session.token, None
+    if settings.ALLOW_SELF_MODE:
+        return None, None
+    return None, {"code": "LOGIN_REQUIRED", "message": "请先登录知乎账号。"}
 
 
 @app.get("/api/health")
@@ -92,12 +109,15 @@ async def auth_callback(request: Request):
     try:
         if not code:
             raise oauth.ZhihuError("CODE_MISSING", "回调缺少 authorization_code。")
-        if returned_state and session.state and not secrets.compare_digest(returned_state, session.state):
+        verdict = oauth.check_state(returned_state, session.state)
+        if verdict == "missing":
+            raise oauth.ZhihuError("STATE_MISSING", "登录状态已失效，请重新发起登录。")
+        if verdict == "mismatch":
             raise oauth.ZhihuError("STATE_MISMATCH", "state 校验失败，登录已拒绝。")
         token = await oauth.exchange_token(code)
         session.token = token["access_token"]
         session.expires_at = (time.time() + token["expires_in"]) if token["expires_in"] else None
-        session.state_verified = bool(returned_state)
+        session.state_verified = verdict == "verified"
         session.state = None  # state 一次性消费
         session.error = None
         try:
@@ -144,13 +164,21 @@ def _enrich_with_shared_metrics(items: list) -> list:
 
 
 @app.get("/api/favlists")
-async def favlists(request: Request):
-    """收藏夹列表（登录用户；本地未登录时走本人模式自测）"""
+async def favlists(request: Request, force: int = 0):
+    """收藏夹列表（需登录；本地 ALLOW_SELF_MODE 下可本人模式自测）"""
     session = _current_session(request)
-    token = session.token if session else None
+    token, login_error = _resolve_token(session)
+    if login_error:
+        return {"ok": False, "error": login_error}
+    cache_key = user_key("favlists", _user_key_id(session))
+    if not force:
+        cached = user_cache.get(cache_key)
+        if cached is not None:
+            return {"ok": True, "cached": True, "items": cached}
     try:
         items = await zhihu.fetch_favlists(oauth_token=token)
-        return {"ok": True, "items": items}
+        user_cache.set(cache_key, items)
+        return {"ok": True, "cached": False, "items": items}
     except zhihu.ZhihuError as exc:
         return {"ok": False, "error": {"code": str(exc.code), "message": exc.message}}
 
@@ -162,9 +190,10 @@ async def collections(request: Request, favlist: str | None = None, force: int =
     favlist 缺省时取用户第一个收藏夹；force=1 时绕过用户缓存主动取新数据（用户点「刷新」）。
     """
     session = _current_session(request)
-    token = session.token if session else None
-    uid = str((session.profile or {}).get("uid") or "anon") if session else "self"
-    cache_key = user_key("collections:" + str(favlist or "first"), uid)
+    token, login_error = _resolve_token(session)
+    if login_error:
+        return {"ok": False, "error": login_error}
+    cache_key = user_key("collections:" + str(favlist or "first"), _user_key_id(session))
     if not force:
         cached = user_cache.get(cache_key)
         if cached is not None:
