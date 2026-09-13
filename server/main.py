@@ -487,7 +487,7 @@ async def _reading_context(request: Request, url: str):
     key = _norm_key(url)
     item = await store.get(key)
     if not item:
-        return None, key, None, {"code": "NOT_DISTILLED", "message": "这篇还没有全文，先用书签蒸馏。"}
+        return None, key, None, {"code": "NOT_DISTILLED", "message": "这篇还没有全文，先用书签保存。"}
     return item, key, _user_key_id(session), None
 
 

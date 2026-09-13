@@ -303,7 +303,7 @@ body {
   border-radius: 4px; border: 1px solid var(--line); background: #eef3ea;
 }
 
-/* ---- 已蒸馏徽章（卡片内） ---- */
+/* ---- 已保存徽章（卡片内） ---- */
 .distill-badge {
   display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
   background: rgba(47, 122, 61, .10); color: var(--green);
@@ -313,7 +313,7 @@ body {
 }
 .distill-badge:hover { background: rgba(47, 122, 61, .16); }
 
-/* ---- 去蒸馏按钮（未蒸馏卡片：虚线描边，提示可操作） ---- */
+/* ---- 去蒸馏按钮（未保存卡片：虚线描边，提示可操作） ---- */
 .go-distill {
   display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
   background: transparent; color: var(--ink-2);

@@ -241,7 +241,7 @@
 
     <!-- 开始卡 -->
     <div class="rd-body" id="rd-start" style="display:block">
-      <p class="rd-pane-label">粘贴一篇已蒸馏文章的知乎链接，开始逐段精读</p>
+      <p class="rd-pane-label">粘贴一篇已保存文章的知乎链接，开始逐段精读</p>
       <div class="rd-input-row" style="margin:10px 0">
         <input id="rd-url" placeholder="https://zhuanlan.zhihu.com/p/..." autocomplete="off">
         <button class="rd-btn" id="rd-open">开始</button>
@@ -782,7 +782,7 @@
         } catch (err) {
           if (gen !== articleGen) return;   // 期间已切换文章：不显示旧错误
           $("rd-start-error").textContent = err.message
-            + (err.code === "NOT_DISTILLED" ? "（先在收藏列表里点「去蒸馏全文」）" : "");
+            + (err.code === "NOT_DISTILLED" ? "（先在收藏列表里点「去保存全文」）" : "");
           $("rd-open").disabled = false;
           $("rd-url").disabled = false;
         }
