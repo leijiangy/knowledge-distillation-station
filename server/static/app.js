@@ -7,7 +7,8 @@
     page: $("page"),
     sidebarToggle: $("sidebar-toggle"), sidebarExpand: $("sidebar-expand"),
     favGroup: $("fav-group"), favParent: $("fav-parent"), favSub: $("fav-sub"),
-    navHome: $("nav-home"), navHistory: $("nav-history"), navRecommend: $("nav-recommend"),
+    navHome: $("nav-home"), navRecommend: $("nav-recommend"),
+    histGroup: $("hist-group"), histParent: $("hist-parent"), histSub: $("hist-sub"),
     viewRecommend: $("view-recommend"), recommendCards: $("recommend-cards"),
     recommendCount: $("recommend-count"), recommendRefresh: $("recommend-refresh"),
     recoSeedHint: $("reco-seed-hint"), recoExpand: $("reco-expand"),
@@ -713,8 +714,37 @@
     }
     if (status && status.callback_configured) location.href = "/api/oauth/start";
   });
-  // 占位导航：学习记录（暂不跳转）
-  els.navHistory.addEventListener("click", (event) => event.preventDefault());
+  // 学习记录：侧边栏下拉会话列表（点条目恢复阅读位置；底部可查看全部）
+  let histListLoaded = false;
+  async function loadHistoryList() {
+    const sub = els.histSub;
+    if (!sub) return;
+    try {
+      const data = await api("/api/reading/history");
+      const items = (data.items || []).slice(0, 8);
+      if (!items.length) {
+        sub.innerHTML = '<div class="nav-sub-loading">还没有学习记录</div>';
+        return;
+      }
+      histListLoaded = true;
+      sub.innerHTML = items.map((it) => {
+        const href = "/reading.html?url=" + encodeURIComponent(it.url) + "&seg=" + (it.seg || 0);
+        const label = it.total > 1 ? ((it.seg || 0) + 1) + "/" + it.total : "";
+        return '<a class="nav-subitem" href="' + href + '" title="' + escapeHtml(it.title || "") + '">'
+          + '<span class="nav-subitem-title">' + escapeHtml(it.title || it.url) + '</span>'
+          + (label ? '<span class="sub-count">' + label + '</span>' : "")
+          + "</a>";
+      }).join("");
+    } catch (err) {
+      sub.innerHTML = '<div class="nav-sub-loading">加载失败</div>';
+    }
+  }
+  if (els.histParent) {
+    els.histParent.addEventListener("click", () => {
+      const open = els.histGroup.classList.toggle("open");
+      if (open && !histListLoaded) loadHistoryList();
+    });
+  }
 
   // 首页 / 收藏视图切换
   els.navHome.addEventListener("click", () => showHome());

@@ -108,7 +108,8 @@ body {
 }
 .nav-subitem:hover { background: rgba(47, 122, 61, .06); }
 .nav-subitem.active { background: rgba(47, 122, 61, .10); color: var(--green); font-weight: 700; }
-.sub-count { font-size: 11px; color: var(--ink-3); font-weight: 400; }
+.nav-subitem .nav-subitem-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-count { font-size: 11px; color: var(--ink-3); font-weight: 400; flex: 0 0 auto; }
 .nav-subitem.active .sub-count { color: var(--green); }
 
 /* 用户信息块 */

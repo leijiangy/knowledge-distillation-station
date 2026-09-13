@@ -50,10 +50,18 @@
             </span>
           </button>
 
-          <a class="nav-item" href="#" id="nav-history">
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="12,7.5 12,12 15,13.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            学习记录
-          </a>
+          <div class="nav-group" id="hist-group">
+            <button class="nav-item nav-parent" id="hist-parent">
+              <span class="left">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="12,7.5 12,12 15,13.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                学习记录
+              </span>
+              <svg class="chevron" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="7,10 12,15 17,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="nav-sub" id="hist-sub">
+              <div class="nav-sub-loading">展开后加载……</div>
+            </div>
+          </div>
         </nav>
 
         <div class="user-block" id="user-block">
