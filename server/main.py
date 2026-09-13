@@ -326,6 +326,7 @@ async def distilled_index():
         "ok": True,
         "items": {
             k: {"title": v["title"], "length": len(v["content"]), "at": v["at"],
+                "images": v.get("images") or [],
                 "cover": (v.get("images") or [None])[0]}
             for k, v in distilled_store.items()
         },

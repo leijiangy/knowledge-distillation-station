@@ -64,7 +64,7 @@
       "var title=(document.title||'').replace(/^(\\([^)]*\\)\\s*)+/,'').replace(/ ?[-—|] ?知乎.*$/,'').trim();",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
       "var imgs=[];var list=el.querySelectorAll('img');",
-      "for(var i=0;i<list.length&&imgs.length<9;i++){",
+      "for(var i=0;i<list.length&&imgs.length<3;i++){",
       "var im=list[i];var cls=String(im.className||'');",
       "if(/avatar|emoji|icon|badge|logo|symbol|sticker/i.test(cls))continue;",
       "var s=im.currentSrc||im.getAttribute('src')||im.getAttribute('data-original')||im.getAttribute('data-actualsrc')||'';",
@@ -126,9 +126,9 @@
     ));
   }
 
-  // 卡片封面改用知乎 CDN 缩略图（1440w → 720w，约省一半流量）
+  // 卡片配图改用知乎 CDN 小缩略图（约 5KB/张，列表快速加载）
   function thumbCover(url) {
-    return String(url || "").replace(/_\d+w\.(jpe?g|png|webp|gif)$/i, "_720w.$1");
+    return String(url || "").replace(/_\d+w\.(jpe?g|png|webp|gif)$/i, "_250x0.$1");
   }
 
   function formatDate(unixSeconds) {
@@ -202,8 +202,14 @@
     const initial = author ? author.slice(0, 1) : "·";
     const dKey = String(item.Url || "").split("?")[0].split("#")[0];
     const dist = distilledMap[dKey];
-    const coverHtml = dist && dist.cover
-      ? `<img class="card-cover" src="${escapeHtml(thumbCover(dist.cover))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+    const distImgs = (dist && dist.images) || [];
+    // 单图：摘要左侧小缩略图；多图：摘要下方一排（最多三张）
+    const thumbHtml = distImgs.length === 1
+      ? `<img class="card-thumb" src="${escapeHtml(thumbCover(distImgs[0]))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+      : "";
+    const galleryHtml = distImgs.length >= 2
+      ? `<div class="card-gallery">${distImgs.slice(0, 3).map((u) =>
+          `<img src="${escapeHtml(thumbCover(u))}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join("")}</div>`
       : "";
     const badgeHtml = dist
       ? `<button class="distill-badge" data-distill="${escapeHtml(dKey)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`
@@ -215,7 +221,6 @@
     }).join("");
     return `
       <article class="card" data-url="${escapeHtml(item.Url || "")}" data-title="${escapeHtml(item.Title || "")}">
-        ${coverHtml}
         <a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>
         <div class="meta">
           <span class="tag">${TYPE_NAMES[item.ContentType] || item.ContentType || "内容"}</span>
@@ -228,12 +233,14 @@
           <span>${formatDate(item.FavTime)}</span>
         </div>
         <div class="card-main">
+          ${thumbHtml}
           <p class="summary">${escapeHtml(item.Summary || "")}</p>
           <div class="card-radar">
             ${radarSvg(m)}
             <div class="radar-labels">${labels}</div>
           </div>
         </div>
+        ${galleryHtml}
         ${badgeHtml}
         <div class="foot">依据：收藏 ${item.FavoriteCount || 0} · 赞同 ${item.LikeCount || 0} · 评论 ${item.CommentCount || 0}</div>
       </article>`;
