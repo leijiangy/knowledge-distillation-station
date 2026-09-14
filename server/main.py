@@ -830,7 +830,7 @@ async def reading_event(request: Request):
     except Exception:
         return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
     event = str(body.get("event") or "")
-    if event not in ("open", "understood", "deleted", "finished"):
+    if event not in ("open", "understood", "deleted", "finished", "reviewed", "quiz_done"):
         return {"ok": False, "error": {"code": "BAD_EVENT", "message": "未知事件。"}}
     item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
     if error:
@@ -986,6 +986,67 @@ async def reading_quiz_answer(request: Request):
             "answer": correct_text,
             "right_index": right_index, "right_bool": right_bool,
             "explain": explain or (q.get("explanation") or "")}
+
+
+@app.post("/api/reading/review")
+async def reading_review(request: Request):
+    """复习：一段概括性文字。
+
+    mode=general  从岔路口进入——只据原贴内容（+ 我问过的问题），按内容键共享缓存
+    mode=personal 从自测结束页进入——带上最近一轮答错与跳过的题（跳过视为不懂），
+                  因人而异，不缓存
+
+    两条路径的按钮文案都是「复习一下」，模式对用户不可见。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    if error:
+        return {"ok": False, "error": error}
+    mode = "personal" if str(body.get("mode") or "") == "personal" else "general"
+    plan = await reading_store.get_article(key)
+    if not plan:
+        return {"ok": False, "error": {"code": "NOT_OPENED", "message": "这个阅读会话还没开始。"}}
+    summary = plan.get("summary") or ""
+    content = (item.get("content") or "")[:QUIZ_MAX_CHARS]
+    weak_points, questions = [], []
+
+    if mode == "personal":
+        # 自测数据读不出来就退化成通用版，不能因此让复习不可用
+        try:
+            row = await reading_store.get_quiz(key)
+            quiz_questions = reading_store.load_questions(row)
+            attempts = reading_store.collapse_attempts(
+                await reading_store.list_quiz_attempts(key, uid))
+            weak_points = ([] if not attempts        # 一题都没做过：谈不上薄弱点
+                           else reading_store.collect_weak_points(quiz_questions, attempts))
+        except Exception as exc:
+            print(f"[review] 读取自测反馈失败，退回通用版：{exc}")
+            mode = "general"
+        if not weak_points:
+            mode = "general"        # 全对（或没做过）时没有薄弱点可讲
+    if mode == "general":
+        # 我问过的问题：说明我卡在哪里（通用版也带上）
+        try:
+            questions = await reading_store.list_user_questions(key, uid)
+        except Exception as exc:
+            print(f"[review] 读取提问失败：{exc}")
+
+    cache_key = "review:" + key if mode == "general" else ""
+    if cache_key:
+        cached = content_cache.get(cache_key)
+        if cached:
+            return {"ok": True, "mode": mode, "text": cached, "cached": True}
+    try:
+        text = await ai.review_summary(item["title"], summary, content,
+                                       weak_points=weak_points, questions=questions)
+    except ai.AIError as exc:
+        return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
+    if cache_key and text:
+        content_cache.set(cache_key, text)
+    return {"ok": True, "mode": mode, "text": text, "cached": False}
 
 
 @app.delete("/api/reading/node/{node_id}")

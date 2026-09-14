@@ -179,3 +179,78 @@ def test_quiz_public_marks_answered():
 
     out = _quiz_public([{"kind": "judgment", "stem": "s"}], {0: {"correct": True, "chosen": "对"}})
     assert out[0]["done"] is True and out[0]["correct"] is True
+
+
+# ---------- 复习：薄弱点收集 ----------
+
+from core.reading_store import collect_weak_points
+
+
+def jq(stem="陈述", answer=True):
+    return {"kind": "judgment", "stem": stem, "answer": answer}
+
+
+def cq(stem="问题", answer=1, options=None):
+    return {"kind": "choice", "stem": stem, "options": options or ["A", "B", "C", "D"],
+            "answer": answer}
+
+
+def done(correct: bool, chosen: str = "x"):
+    return {"correct": correct, "chosen": chosen, "at": 1}
+
+
+def test_correct_answer_is_not_weak():
+    """这轮答对了说明会了，不进薄弱点"""
+    assert collect_weak_points([jq()], {0: done(True)}) == []
+
+
+def test_wrong_answer_is_weak():
+    got = collect_weak_points([jq()], {0: done(False, "错")})
+    assert len(got) == 1
+    assert got[0]["skipped"] is False
+    assert got[0]["answer"] == "对"
+
+
+def test_skipped_question_is_weak():
+    """跳过 = 用户不懂，没作答记录的题也算薄弱点"""
+    got = collect_weak_points([jq()], {})
+    assert len(got) == 1 and got[0]["skipped"] is True
+
+
+def test_mixed_keeps_only_weak():
+    questions = [jq(stem="a"), cq(stem="b"), jq(stem="c")]
+    attempts = {0: done(True), 1: done(False, "A")}      # c 跳过
+    got = collect_weak_points(questions, attempts)
+    assert [w["stem"] for w in got] == ["b", "c"]
+
+
+def test_choice_weak_point_shows_option_text_not_index():
+    got = collect_weak_points([cq(answer=2)], {0: done(False, "A")})
+    assert got[0]["answer"] == "C"        # 不是下标 2
+
+
+def test_chosen_preserved():
+    got = collect_weak_points([cq()], {0: done(False, "我选的这个")})
+    assert got[0]["chosen"] == "我选的这个"
+
+
+def test_judgment_answer_text():
+    assert collect_weak_points([jq(answer=True)], {})[0]["answer"] == "对"
+    assert collect_weak_points([jq(answer=False)], {})[0]["answer"] == "错"
+
+
+def test_bad_question_skipped():
+    got = collect_weak_points(["坏数据", None], {})
+    assert got == []
+
+
+def test_empty_inputs():
+    assert collect_weak_points([], {}) == []
+    assert collect_weak_points(None, None) == []
+
+
+def test_bad_choice_answer_index():
+    """答案下标越界时不给文字，但题仍记为薄弱点"""
+    got = collect_weak_points([{"kind": "choice", "stem": "s",
+                                "options": ["A"], "answer": 9}], {})
+    assert len(got) == 1 and got[0]["answer"] == ""

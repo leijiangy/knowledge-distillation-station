@@ -451,3 +451,46 @@ async def quiz_explain(title: str, summary: str, question: str, chosen: str,
     )
     return (await _chat([{"role": "user", "content": prompt}],
                         temperature=0.4, max_tokens=1000)).strip()
+
+
+# ---- 复习（一段概括性文字） ----
+
+async def review_summary(title: str, summary: str, content: str,
+                         weak_points: list | None = None,
+                         questions: list | None = None) -> str:
+    """复习用的概括：讲清全文脉络，并针对本人的薄弱点指出易错与不易懂处。
+
+    通用版（weak_points 与 questions 都为空）：只据原贴内容，帮用户理解容易卡住的地方。
+    个性化版：把最近一轮答错/跳过的题拼进 prompt——复习的价值就在"针对你"。
+    """
+    weak_points = weak_points or []
+    questions = questions or []
+    prompt = (
+        "用户正在复习一篇他读过的文章。请写一段概括性文字。\n\n"
+        f"标题：{title}\n"
+        f"全文主旨：{summary or '（未知）'}\n\n"
+        f"全文：\n{content}\n\n"
+    )
+    if weak_points:
+        lines = []
+        for w in weak_points:
+            kind = "跳过未答" if w.get("skipped") else "答错了"
+            lines.append(f"- [{kind}] 题目：{w.get('stem') or ''}\n"
+                         f"  正确答案：{w.get('answer') or ''}"
+                         + (f"\n  他选了：{w.get('chosen') or ''}" if w.get("chosen") else ""))
+        prompt += ("他刚做完自测，下面这些题他答错或跳过了——**这些就是他的薄弱点**：\n"
+                   + "\n".join(lines) + "\n\n")
+    if questions:
+        prompt += ("他读这篇文章时还问过下面这些问题（说明他当时卡在这里）：\n"
+                   + "\n".join(f"- {q}" for q in questions) + "\n\n")
+    prompt += (
+        "写作要求：\n"
+        "1. 先说清这篇文章的脉络：从什么问题出发、用什么论据、得到什么结论\n"
+        "2. 再针对上面那些薄弱点（如果有）讲清楚：这些地方为什么容易错、"
+        "原文里对应的是哪一层意思、正确的理解应该抓住什么\n"
+        "3. 如果没有薄弱点信息，就着重讲这篇文章里最容易卡住读者的地方是什么\n"
+        "4. 平实的中文，连续的一段话，不超过 350 字\n"
+        "5. 不列条目、不加标题、不复述原文整句，不替用户重新读一遍"
+    )
+    return (await _chat([{"role": "user", "content": prompt}],
+                        temperature=0.4, max_tokens=1200)).strip()

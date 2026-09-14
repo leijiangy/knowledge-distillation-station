@@ -53,6 +53,20 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
+        if path == "/api/reading/review":
+            mode = body.get("mode")
+            if mode == "personal":
+                return self._json({"ok": True, "mode": "personal", "cached": False,
+                                   "text": "这篇讲的是注意力机制怎么把「查什么」和「有什么」对齐。"
+                                           "你这次在交叉熵那里判断反了：它不满足对称性，所以不是距离；"
+                                           "正确理解是先有 p 的熵，再谈用 q 编码的代价。"
+                                           "另一处你跳过了多头注意力的分工问题——各头一开始并没有分工，"
+                                           "分工是训练中自己形成的。"})
+            return self._json({"ok": True, "mode": "general", "cached": False,
+                               "text": "这篇从注意力机制出发：先把 Query 与每个 Key 做点积得到相似度，"
+                                       "用 softmax 归一化后对 Value 加权求和，说明它相比 RNN 好在可并行；"
+                                       "再把注意力放进信息论视角，说清交叉熵与 KL 散度的关系。"
+                                       "最容易卡住的是把交叉熵当成距离——它不满足对称性。"})
         if path == "/api/reading/quiz/answer":
             idx = int(body.get("index", -1))
             pick = body.get("answer")

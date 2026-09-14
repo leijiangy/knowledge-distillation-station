@@ -263,6 +263,22 @@
     .rd-quiz-end { text-align: center; padding: 34px 20px; }
     .rd-quiz-end h2 { font-size: 19px; margin-bottom: 12px; }
     .rd-quiz-end .rd-fork { margin-top: 18px; }
+
+    /* ---- 复习：一段概括性文字，没有其他控件 ---- */
+    .rd-review { max-width: 720px; margin: 0 auto; }
+    .rd-review-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .rd-review-card {
+      background-color: var(--paper); background-image: var(--noise);
+      border: 1px solid var(--line-card); border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(30,40,28,.035); padding: 24px 26px;
+    }
+    .rd-review-label {
+      font-size: 12px; color: var(--ink-3); font-weight: 700; margin-bottom: 12px;
+    }
+    .rd-review-text {
+      font-size: 15.5px; line-height: 2; color: var(--ink); white-space: pre-wrap;
+    }
+    .rd-review-wait { font-size: 14px; color: var(--ink-2); line-height: 1.9; }
   </style>
 </head>
 <body class="reading">
@@ -414,10 +430,23 @@
         <p class="rd-hint" style="margin-bottom:16px">你留在这里的提问和解释都保存着，随时可以回来。</p>
         <div class="rd-fork">
           <button class="rd-btn" id="rd-to-quiz">自测一下 →</button>
-          <button class="rd-btn ghost" id="rd-to-review">复习标记与提问</button>
+          <button class="rd-btn ghost" id="rd-to-review">复习一下</button>
           <a class="rd-btn ghost" href="/">返回收藏夹</a>
         </div>
         <p class="rd-hint" id="rd-finish-hint" style="margin-top:14px"></p>
+      </div>
+
+      <!-- 复习：一段概括性文字；从岔路口来是通用版，从自测结束页来带我的错题 -->
+      <div class="rd-review" id="rd-review" hidden>
+        <div class="rd-review-head">
+          <button class="rd-btn ghost" id="rd-review-back" style="padding:5px 14px;font-size:12.5px">← 返回</button>
+        </div>
+        <div class="rd-review-card">
+          <div class="rd-review-label" id="rd-review-label">全文概括</div>
+          <div class="rd-review-text" id="rd-review-text"></div>
+          <div class="rd-review-wait" id="rd-review-wait"></div>
+        </div>
+        <div class="rd-error" id="rd-review-error" style="margin-top:12px"></div>
       </div>
 
       <!-- 自测：先给一段概括把内容回忆起来，再一题一屏地作答 -->
@@ -438,6 +467,7 @@
           <p class="rd-hint" id="rd-quiz-end-note"></p>
           <div class="rd-fork">
             <button class="rd-btn" id="rd-quiz-again">再做一遍</button>
+            <button class="rd-btn ghost" id="rd-review-after-quiz" hidden>复习一下</button>
             <button class="rd-btn ghost" id="rd-quiz-to-read">回去读</button>
             <a class="rd-btn ghost" href="/">返回收藏夹</a>
           </div>
@@ -1286,8 +1316,14 @@
         const total = quiz.questions.length;
         const settled = quiz.questions.filter((q) => q.done).length;
         $("rd-quiz-end-title").textContent = settled + " / " + total + " 题已作答";
-        const note = quiz.wrong
-          ? "答错的地方上面都给了讲解，回去读那一部分或者过一阵再来一次。"
+        // 薄弱点 = 答错的 + 跳过的；有才给复习入口（全对时没什么可复习的）
+        const weak = total - quiz.questions.filter((q) => q.done && q.correct).length;
+        $("rd-review-after-quiz").hidden = weak === 0;
+        if (weak) {
+          $("rd-review-after-quiz").textContent = "复习一下";
+        }
+        const note = quiz.wrong || weak
+          ? "答错和跳过的地方上面都给了讲解。复习一下会把这些地方串起来讲一遍。"
           : "这篇你记住了。过几天再来一次，看还记得多少。";
         $("rd-quiz-end-note").textContent = note;
         logEvent("quiz_done", null, null);
@@ -1297,6 +1333,7 @@
         quizShow(true);
         $("rd-quiz-card").hidden = false;
         $("rd-quiz-end").hidden = true;
+        $("rd-review").hidden = true;
         $("rd-quiz-question").innerHTML =
           '<div class="rd-quiz-stem">正在根据这篇的内容出题……（首次约 10~30 秒）</div>';
         $("rd-quiz-summary").hidden = true;
@@ -1325,6 +1362,36 @@
         renderQuizQuestion();
       }
 
+      // ---------- 复习：一段概括性文字 ----------
+      // mode 由进入路径决定，按钮文案一律「复习一下」，用户不感知两种模式
+      async function startReview(mode) {
+        $("rd-finish").hidden = true;
+        $("rd-quiz").hidden = true;
+        $("rd-review").hidden = false;
+        $("rd-review-error").textContent = "";
+        $("rd-review-text").textContent = "";
+        $("rd-review-label").textContent = mode === "personal" ? "针对你这次的薄弱点" : "全文概括";
+        $("rd-review-wait").textContent = "正在根据这篇内容整理……（约 10~30 秒）";
+        let data;
+        try {
+          data = await api("/api/reading/review", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: state.url, mode: mode }),
+          });
+        } catch (err) {
+          $("rd-review-wait").textContent = "";
+          $("rd-review-error").textContent = "生成失败：" + err.message;
+          return;
+        }
+        $("rd-review-wait").textContent = "";
+        $("rd-review-text").textContent = data.text || "";
+        // 后端可能把 personal 退回了 general（没有薄弱点时），标签跟着实际模式走
+        if (data.mode === "general" && mode === "personal") {
+          $("rd-review-label").textContent = "全文概括";
+        }
+        logEvent("reviewed", null, null);
+      }
+
       // ---------- 事件 ----------
       $("rd-open").addEventListener("click", () => {
         const url = $("rd-url").value.trim();
@@ -1336,9 +1403,13 @@
       $("rd-question").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
       $("rd-done").addEventListener("click", understood);
       $("rd-to-quiz").addEventListener("click", startQuiz);
-      $("rd-to-review").addEventListener("click", () => {
-        // 复习阶段还没实现：说清楚，而不是给一个点了没反应的按钮
-        $("rd-finish-hint").textContent = "复习阶段还没做，先自测或者回去读。";
+      // 岔路口进来的复习：基于原贴内容（那时还没有自测反馈）
+      $("rd-to-review").addEventListener("click", () => startReview("general"));
+      // 自测结束页进来的复习：带上我刚答错和跳过的题
+      $("rd-review-after-quiz").addEventListener("click", () => startReview("personal"));
+      $("rd-review-back").addEventListener("click", () => {
+        $("rd-review").hidden = true;
+        $("rd-finish").hidden = false;
       });
       $("rd-quiz-back").addEventListener("click", () => {
         quizShow(false);

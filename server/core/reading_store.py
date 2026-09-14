@@ -325,3 +325,43 @@ async def delete_quiz_attempts(article_key: str, uid: str) -> None:
         params={"article_key": f"eq.{article_key}", "uid": f"eq.{uid}"},
     )
     resp.raise_for_status()
+
+
+async def list_user_questions(article_key: str, uid: str, limit: int = 20) -> list:
+    """我在这一篇上问过的问题（私有提问节点），按时间升序——复习时用来点出我卡住的地方"""
+    _check_config()
+    resp = await _get_client().get(
+        f"{_REST}/reading_nodes",
+        params={"select": "content,seg_index", "article_key": f"eq.{article_key}",
+                "uid": f"eq.{uid}", "kind": "eq.ask",
+                "order": "id.asc", "limit": str(limit)},
+    )
+    resp.raise_for_status()
+    return [row.get("content") or "" for row in resp.json() if row.get("content")]
+
+
+def collect_weak_points(questions: list, attempts: dict) -> list:
+    """这一轮的薄弱点 = 答错的题 + 跳过的题（纯函数，便于测试）。
+
+    「跳过 = 用户不懂」，所以没作答记录的题也算薄弱点；
+    但用户还没开始自测（attempts 为空且一题都没答）时不算——那时谈不上薄弱点。
+    取每题最新一次作答（来自 collapse_attempts），已答对的题不再翻旧账。
+    """
+    out = []
+    for i, q in enumerate(questions or []):
+        if not isinstance(q, dict):
+            continue
+        done = attempts.get(i)
+        if done and done.get("correct"):
+            continue                      # 这轮答对了，说明会了
+        answer = q.get("answer")
+        if q.get("kind") == "choice":
+            options = q.get("options") or []
+            correct_text = options[answer] if isinstance(answer, int) and not isinstance(answer, bool) \
+                and 0 <= answer < len(options) else ""
+        else:
+            correct_text = "对" if answer is True else ("错" if answer is False else "")
+        out.append({"stem": q.get("stem") or "", "answer": correct_text,
+                    "chosen": (done or {}).get("chosen") or "",
+                    "skipped": done is None})
+    return out
