@@ -95,3 +95,15 @@ async def fetch_profile(oauth_token: str) -> dict:
         "headline": source.get("headline"),
         "url": source.get("url"),
     }
+
+
+def local_path(raw: str) -> str:
+    """把「登录后要落回哪里」限制为站内相对路径，不合法返回空串（避免开放重定向）
+
+    只用于 OAuth 流程的落地地址：必须是 / 开头的本机路径，不能是协议相 URL、协议相对 URL，
+    也不能带反斜杠（浏览器会把 \ 当 / 处理，能被绕过）。
+    """
+    s = str(raw or "").strip()
+    if not s.startswith("/") or s.startswith("//") or "\\" in s or "://" in s:
+        return ""
+    return s[:300]

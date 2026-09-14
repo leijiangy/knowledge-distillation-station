@@ -67,11 +67,16 @@
       "if(confirm((isZhihu?'这个知乎页面不是回答或文章，':'当前不是知乎页面，')+'是否前往知识蒸馏站？')){window.open('" + origin + "/','_blank');}",
       "return;}",
       "var title=(document.title||'').replace(/^(\\([^)]*\\)\\s+)+/,'').replace(/ ?[-—|] ?知乎.*$/,'').trim();",
-      // 页面地址优先取 canonical / og:url：知乎点开图片（灯箱）时地址栏会变成图片地址，
-      // 此时 DOM 还是文章，直接读 location.href 会把全文存到图片地址这个键上，卡片永远对不上
+      // 文章地址以地址栏为准，只有「点开大图」时地址栏才会变成图床地址，那时才退回 canonical/og:url。
+      // 反过来做（优先 canonical/og:url）会踩两件事：①灯箱状态下 canonical 解析成当前地址；
+      // ②知乎回答页的 og:url 是 .../question/undefined/answer/<id>，与卡片认的 /answer/<id> 对不上
       "var canon=document.querySelector('link[rel=canonical]')||document.querySelector('meta[property=\"og:url\"]');",
-      "var pageUrl=((canon&&(canon.href||canon.content))||location.href).split('#')[0];",
-      "if(/\\.zhimg\\.com/.test(pageUrl.split('/')[2]||'')){alert('当前地址是图片地址（可能是点开了大图）：请回到文章页面再点这个书签。');return;}",
+      "var canonUrl=(canon&&(canon.href||canon.content))||'';",
+      "var isImg=function(u){return /(^|\\.)zhimg\\.com$/i.test((u||'').split('/')[2]||'');};",
+      "var pageUrl=(location.href||'').split('#')[0];",
+      "if(isImg(pageUrl))pageUrl=canonUrl;",
+      "if(!pageUrl||isImg(pageUrl)){alert('当前地址是图片地址（可能是点开了大图）：请回到文章页面再点这个书签。');return;}",
+      "pageUrl=pageUrl.replace(/\\/question\\/undefined\\/answer\\/(\\d+)/,'/answer/$1');",
       // 配图：先在每张图前插一个不可见标记，innerText 会把标记放在图片真实位置上，
       // 由此得到图片在正文里的字符下标；读完再把标记从文本和 DOM 里清掉（正文逐字不变）
       "var seen=[];var picked=[];var list=el.querySelectorAll('img');",
@@ -101,13 +106,17 @@
       "}",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
       "if(!confirm('保存这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
-      "var fromStation=location.hash.indexOf('kd=1')>=0;",
+      // 是否从站里来的：优先看 #kd=1 标记，其次看 referrer（从站里打开的新标签页带着我们的域名）。
+      // 知乎点开大图（灯箱）会改写地址、把 #kd=1 抹掉——只认标记就会既不跳转、又把内容存到错键上
+      "var fromStation=location.hash.indexOf('kd=1')>=0||(document.referrer||'').indexOf('" + origin + "')===0;",
+      "var backTo='" + origin + "/?saved='+encodeURIComponent(pageUrl);",
       "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:pageUrl,content:text,images:imgs})})",
       ".then(function(r){return r.json()})",
       ".then(function(d){",
       "if(!d.ok){alert('失败：'+((d.error&&d.error.message)||'未知错误'));return;}",
-      "if(fromStation){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){location.href='" + origin + "/?saved='+encodeURIComponent(location.href.split('#')[0]);}},400);}",
-      "else{alert('✓ 已进入知识蒸馏站（'+text.length+' 字）');}",
+      "if(fromStation){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){location.href=backTo;}},400);}",
+      "else if(confirm('已保存到知识蒸馏站（'+text.length+' 字）。要回站里读这篇吗？')){location.href=backTo;}",
+      "else{alert('✓ 已保存（'+text.length+' 字）');}",
       "});",
       "})();",
     ].join("");
@@ -161,9 +170,10 @@
   }
 
   // URL 归一化：回答的长短格式统一（与后端 _norm_key 规则一致）
+  // 问答 id 段放宽成 [^/]+：知乎回答页的 og:url 会出现 /question/undefined/answer/<id>
   function normKey(url) {
     const s = String(url || "").split("?")[0].split("#")[0];
-    const m = s.match(/^https?:\/\/(?:www\.)?zhihu\.com\/question\/\d+\/answer\/(\d+)/);
+    const m = s.match(/^https?:\/\/(?:www\.)?zhihu\.com\/question\/[^/]+\/answer\/(\d+)/);
     if (m) return "https://www.zhihu.com/answer/" + m[1];
     return s;
   }
@@ -626,18 +636,24 @@
 
     const params = new URLSearchParams(location.search);
     const canRead = status.authorized || status.self_mode;
+    const savedUrl = params.get("saved");
     if (params.get("oauth") === "error") {
       showHome();
       return;
     }
     if (!canRead) {
       // 默认授权：能走 OAuth 就直接发起（用户进入即授权，无需点按钮）；本地预览模式停在首页
-      if (status.callback_configured) { location.href = "/api/oauth/start"; return; }
+      if (status.callback_configured) {
+        // 保存后跳回（?saved=）要把目标一起带上：否则会被这次授权跳转吃掉，
+        // 登录完只落回首页，用户看到的就是"保存了却没跳转"
+        const next = savedUrl ? "/reading.html?url=" + encodeURIComponent(savedUrl) : "";
+        location.href = "/api/oauth/start" + (next ? "?next=" + encodeURIComponent(next) : "");
+        return;
+      }
       showHome();
       return;
     }
     // 保存完成跳回（?saved=文章地址）：直接进入该篇的学习
-    const savedUrl = params.get("saved");
     if (savedUrl) {
       location.href = "/reading.html?url=" + encodeURIComponent(savedUrl);
       return;
@@ -960,11 +976,15 @@
       if (items && items[watch.key]) {
         const length = items[watch.key].length || 0;
         const title = watch.title;
+        const key = watch.key;
         distilledMap = items;
         stopWatch();
         showGuide("success", title, length);
         if (els.viewCollections && !els.viewCollections.hidden) renderCards();
         if (els.viewRecommend && !els.viewRecommend.hidden) renderRecommendCards();
+        // 全文到齐就直接进这篇的精读：学习记录是在精读页打开时才写入的，
+        // 不自动进去的话用户会以为"保存了但学习记录里什么都没有"
+        setTimeout(() => { location.href = "/reading.html?url=" + encodeURIComponent(key); }, 700);
         return;
       }
     } catch (err) { /* 网络抖动：下一轮再试 */ }
@@ -989,7 +1009,7 @@
       els.distillGuideDot.hidden = true;
       els.distillGuideTitle.textContent = "✓ 保存成功";
       els.distillGuideBody.innerHTML =
-        `全文 <b>${length || 0} 字</b>已存入，卡片上的「✓ 已保存」已点亮，点击即可进入学习。`
+        `全文 <b>${length || 0} 字</b>已存入，正在进入这篇的精读…（若没自动跳转，点卡片上的「✓ 已保存」即可）`
         + (title ? `<div class="gd-target">《${escapeHtml(title)}》</div>` : "");
       setTimeout(() => { if (!watch && els.distillGuide) els.distillGuide.hidden = true; }, 12000);
     } else if (state === "timeout") {

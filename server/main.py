@@ -106,13 +106,17 @@ async def oauth_status(request: Request, response: Response):
 
 
 @app.get("/api/oauth/start")
-async def oauth_start(request: Request, response: Response):
+async def oauth_start(request: Request, response: Response, next: str = ""):
     session = _get_or_create(request, response)
+    # 登录完要落到哪：保存后跳回精读靠它穿过授权流程（默认回到首页）
+    session.next_path = oauth.local_path(next) or None
     try:
         session.state = oauth.new_state()
         session.error = None
         url = oauth.build_authorize_url(session.state)
-        return RedirectResponse(url, status_code=302)
+        redirect = RedirectResponse(url, status_code=302)
+        _attach_cookie(redirect, session)   # 新建的会话也要把 cookie 带出去
+        return redirect
     except oauth.ZhihuError as exc:
         session.error = {"code": str(exc.code), "message": exc.message}
         redirect = RedirectResponse("/?oauth=error", status_code=302)
@@ -146,7 +150,8 @@ async def auth_callback(request: Request):
             session.profile = await oauth.fetch_profile(session.token)
         except oauth.ZhihuError:
             session.profile = None  # 资料获取失败不阻断登录
-        redirect = RedirectResponse("/?oauth=success", status_code=302)
+        redirect = RedirectResponse(session.next_path or "/?oauth=success", status_code=302)
+        session.next_path = None
         _attach_cookie(redirect, session)
         return redirect
     except oauth.ZhihuError as exc:
@@ -301,8 +306,10 @@ async def article_meta(request: Request):
 DISTILL_MAX_CHARS = 200_000
 
 # URL 归一化：收藏列表给回答是短格式 /answer/<id>，知乎页面地址是长格式
-# /question/<qid>/answer/<id> —— 统一成短格式，保证卡片匹配与去重一致
-_ANSWER_URL_RE = re.compile(r"^https?://(?:www\.)?zhihu\.com/question/\d+/answer/(\d+)")
+# /question/<qid>/answer/<id> —— 统一成短格式，保证卡片匹配与去重一致。
+# 问号段用 [^/]+ 而不是 \d+：知乎回答页的 og:url 会出现 /question/undefined/answer/<id>，
+# 只认数字会让这类地址漏过归一化，键与卡片永远对不上
+_ANSWER_URL_RE = re.compile(r"^https?://(?:www\.)?zhihu\.com/question/[^/]+/answer/(\d+)")
 
 
 def _norm_key(url: str) -> str:
