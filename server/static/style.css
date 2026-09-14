@@ -192,13 +192,6 @@ body {
 }
 .search-input:focus { outline: none; border-color: #c6d2bf; }
 .search-input-wide { width: 240px; font-size: 13px; }
-/* 首页 hero 里的搜索框：比工具栏的大一号，是首页的主操作 */
-.home-search { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
-.home-search-input {
-  width: min(340px, 100%); font-size: 14px; padding: 10px 14px; border-radius: 9px;
-  background: rgba(255, 255, 252, .92);
-}
-.home-search .btn-primary { padding: 10px 24px; border-radius: 9px; }
 .btn-ghost {
   background: transparent; color: var(--ink-2); border: 1px solid var(--line);
   padding: 7px 13px; font-size: 12.5px; border-radius: 7px; cursor: pointer;

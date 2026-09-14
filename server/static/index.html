@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>知识蒸馏站 · 把收藏夹变成学习进度表</title>
-  <link rel="stylesheet" href="/style.css?v=7">
+  <link rel="stylesheet" href="/style.css?v=8">
   <script src="/bg.js?v=2" defer></script>
 </head>
 <body>
@@ -31,6 +31,13 @@
             </span>
           </button>
 
+          <button class="nav-item nav-parent" id="nav-search">
+            <span class="left">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><line x1="16" y1="16" x2="20" y2="20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              搜索
+            </span>
+          </button>
+
           <div class="nav-group open" id="fav-group">
             <button class="nav-item nav-parent" id="fav-parent" aria-expanded="true">
               <span class="left">
@@ -49,13 +56,6 @@
             <span class="left">
               <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.3 7.2 18.9l.9-5.4L4.2 9.7l5.4-.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
               智能推荐
-            </span>
-          </button>
-
-          <button class="nav-item nav-parent" id="nav-search">
-            <span class="left">
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><line x1="16" y1="16" x2="20" y2="20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-              搜索
             </span>
           </button>
 
@@ -95,12 +95,8 @@
           <div class="home-intro">
             <h1>今天学点什么？</h1>
             <p class="home-lede">搜一下，就是今天变好的开始。</p>
-            <div class="home-search">
-              <input class="search-input home-search-input" id="home-search-input" type="search" maxlength="60" placeholder="今天想搞懂什么？" aria-label="搜索想学的内容">
-              <button class="btn-primary" id="home-search-btn">搜一下</button>
-            </div>
             <div class="home-actions">
-              <button class="btn-ghost" id="home-goto-collections" hidden>浏览我的收藏 →</button>
+              <button class="btn-primary" id="home-goto-collections" hidden>浏览我的收藏 →</button>
             </div>
           </div>
           <img class="home-illustration" src="/reading-illustration.webp" width="220" height="180" alt="" decoding="async">
@@ -273,6 +269,6 @@
   </div>
 
   <script src="/tutorial.js?v=1"></script>
-  <script src="/app.js?v=7"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>
