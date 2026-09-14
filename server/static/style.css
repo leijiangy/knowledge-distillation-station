@@ -18,15 +18,22 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 
+/* 动态背景层：铺满视口、压在最底层、不接收事件（点阵/连线/辉光，行为见 /bg.js）
+   z-index:-1 画在 body 背景色之上、所有内容之下，纸面仍然完整盖住它 */
+#bg-canvas {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  display: block; z-index: -1; pointer-events: none;
+}
+
 body {
   color: var(--ink); line-height: 1.7;
   font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   background-color: #edf3e7;
+  /* 两层角部光晕留在 CSS；原来的 24px 绿点阵改由 #bg-canvas 绘制（同样的绿与密度，但会动） */
   background-image:
     radial-gradient(900px 420px at 12% -10%, rgba(47, 122, 61, .12), transparent 62%),
-    radial-gradient(700px 420px at 88% 110%, rgba(47, 122, 61, .09), transparent 60%),
-    radial-gradient(circle, rgba(47, 122, 61, .10) 1.1px, transparent 1.1px);
-  background-size: auto, auto, 24px 24px;
+    radial-gradient(700px 420px at 88% 110%, rgba(47, 122, 61, .09), transparent 60%);
+  background-size: auto, auto;
   background-attachment: fixed;
   display: flex; justify-content: center;
   padding: 40px 20px 80px; min-height: 100vh;

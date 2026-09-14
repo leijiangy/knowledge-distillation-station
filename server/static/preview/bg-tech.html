@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>科技感动态背景 · 三方案对比预览</title>
+<!-- 复用正式的 style.css：预览里的界面就是线上那套，只换背景 -->
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* ===== 预览工具（不属于正式界面） ===== */
+  body.pv { display: block; padding: 0; }
+  body.pv .page { margin: 46px auto 96px; }
+
+  .pv-bar {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    z-index: 60; display: flex; align-items: center; gap: 10px;
+    padding: 7px 9px 7px 14px; border-radius: 999px;
+    background: rgba(253, 252, 248, .93);
+    border: 1px solid rgba(47, 122, 61, .18);
+    box-shadow: 0 16px 40px -18px rgba(20, 30, 18, .45);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    font-size: 12.5px; color: var(--ink-2);
+  }
+  .pv-bar b { font-weight: 700; color: var(--ink); }
+  .pv-tabs { display: flex; gap: 2px; }
+  .pv-tab {
+    border: 0; background: none; font-family: inherit; font-size: 12.5px;
+    color: var(--ink-2); padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .pv-tab:hover { background: rgba(47, 122, 61, .08); }
+  .pv-tab.on { background: var(--green); color: #f6fbf3; font-weight: 700; }
+  .pv-sep { width: 1px; height: 18px; background: var(--line); }
+  .pv-hint { color: var(--ink-3); white-space: nowrap; padding-right: 6px; }
+
+  /* 纸面保持不透明——与正式页面一致，预览即所见 */
+
+  /* ===== 方案 B · 深色仪表盘：只换配色变量 + 少量硬编码处 ===== */
+  body.mode-b {
+    --paper: #101d16;
+    --ink: #e6f4e9;
+    --ink-2: #a3bcab;
+    --ink-3: #7d948a;
+    --line: #24392d;
+    --line-card: #2c4837;
+    --green: #3fbf76;
+    --green-dark: #2f9c5d;
+    --teal: #3fd0c0;
+    --gold: #d9b55c;
+    background-color: #0b1410;
+    background-image:
+      radial-gradient(1100px 520px at 50% 8%, rgba(63, 208, 192, .10), transparent 66%),
+      radial-gradient(900px 500px at 50% 108%, rgba(63, 191, 118, .12), transparent 62%);
+  }
+  body.mode-b .page { background-color: rgba(15, 28, 21, .90); box-shadow: 0 1px 2px rgba(0,0,0,.4), 0 26px 60px -22px rgba(0,0,0,.75); }
+  body.mode-b .sidebar { background: rgba(255, 255, 255, .03); }
+  body.mode-b .user-block,
+  body.mode-b .sidebar-toggle { background: rgba(255, 255, 255, .05); }
+  body.mode-b .nav-parent.current { background: rgba(63, 191, 118, .16); }
+  body.mode-b .nav-subitem:hover { background: rgba(63, 191, 118, .10); }
+  body.mode-b .nav-subitem.active { background: rgba(63, 191, 118, .16); }
+  body.mode-b .nav-avatar { background: rgba(63, 191, 118, .18); }
+  body.mode-b .toolbar { background: rgba(16, 29, 22, .86); }
+  body.mode-b .card { background: rgba(255, 255, 255, .035); }
+  body.mode-b .select { background: rgba(255, 255, 255, .06); }
+  body.mode-b .tag { background: rgba(63, 208, 192, .10); }
+  body.mode-b .go-distill { border-color: rgba(63, 208, 192, .35); }
+  body.mode-b .distill-badge { background: rgba(63, 191, 118, .14); border-color: rgba(63, 191, 118, .38); }
+  /* 深色下雷达图与数值标签需重新配 */
+  body.mode-b .radar-grid, body.mode-b .radar-spoke { stroke: rgba(160, 210, 185, .18); }
+  body.mode-b .radar-area { fill: rgba(63, 208, 192, .16); stroke: var(--teal); }
+  body.mode-b .radar-dot { fill: var(--teal); stroke: #0b1410; }
+  body.mode-b .radar-labels b { color: #eaf7ee; }
+  body.mode-b .author-avatar { background: rgba(255, 255, 255, .10) !important; color: #eaf7ee; }
+
+  /* 画布层：铺满视口、压在最底、不接收事件 */
+  #bg-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: -1; pointer-events: none; }
+
+  /* 说明卡：讲清当前方案的差异，方便对比决策 */
+  .pv-note {
+    position: fixed; right: 18px; top: 18px; z-index: 60; width: 268px;
+    background: rgba(253, 252, 248, .94); border: 1px solid var(--line); border-radius: 12px;
+    padding: 13px 15px; font-size: 12.5px; line-height: 1.65; color: var(--ink-2);
+    box-shadow: 0 16px 40px -20px rgba(20, 30, 18, .4);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  body.mode-b .pv-note { background: rgba(16, 29, 22, .94); }
+  .pv-note h4 { font-size: 13px; color: var(--ink); margin-bottom: 5px; }
+  .pv-note b { color: var(--green); }
+  @media (max-width: 1180px) { .pv-note { display: none; } }
+</style>
+</head>
+<body class="pv mode-a">
+  <canvas id="bg-canvas" aria-hidden="true"></canvas>
+
+  <div class="page" id="page">
+    <aside class="sidebar">
+      <div class="sidebar-inner">
+        <div class="brand-row">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="15" height="15"><polygon points="12,4.5 19.5,16.5 4.5,16.5" fill="none" stroke="#f6fbf3" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="4.5" r="1.9" fill="#f6fbf3"/><circle cx="19.5" cy="16.5" r="1.9" fill="#f6fbf3"/><circle cx="4.5" cy="16.5" r="1.9" fill="#f6fbf3"/></svg>
+          </span>
+          知识蒸馏站
+        </div>
+        <nav class="nav-list">
+          <button class="nav-item nav-parent"><span class="left">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 11 L12 4.5 L20 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10.5 V19.5 H18 V10.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            首页</span>
+          </button>
+          <div class="nav-group open">
+            <button class="nav-item nav-parent current"><span class="left">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><polygon points="12,5 19,16 5,16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+              我的收藏</span>
+              <svg class="chevron" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="7,10 12,15 17,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="nav-sub">
+              <button class="nav-subitem active">AI 与深度学习 <span class="sub-count">18</span></button>
+              <button class="nav-subitem">产品与设计 <span class="sub-count">11</span></button>
+              <button class="nav-subitem">认知与方法 <span class="sub-count">9</span></button>
+              <button class="nav-subitem">待读 <span class="sub-count">11</span></button>
+            </div>
+          </div>
+          <button class="nav-item nav-parent"><span class="left">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.3 7.2 18.9l.9-5.4L4.2 9.7l5.4-.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+            智能推荐</span>
+          </button>
+          <a class="nav-item" href="#"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><polyline points="12,7.5 12,12 15,13.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            学习记录</a>
+        </nav>
+        <div class="user-block">
+          <span class="nav-avatar">知</span>
+          <div class="user-meta"><b>知乎用户</b><small>已登录</small></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <h2>我的收藏 <span class="count">49 篇</span></h2>
+        </div>
+        <div class="toolbar-right">
+          <span class="loaded-badge">2 分钟前更新</span>
+          <select class="select" aria-label="排序方式">
+            <option>综合分数（高→低）</option>
+          </select>
+          <button class="btn-ghost">刷新</button>
+        </div>
+      </div>
+      <div class="cards" id="cards"></div>
+    </main>
+  </div>
+
+  <div class="pv-note" id="pv-note"></div>
+
+  <div class="pv-bar">
+    <span class="pv-hint">把鼠标移到页面上 →</span>
+    <div class="pv-tabs">
+      <button class="pv-tab on" data-mode="a">A · 淡绿科技</button>
+      <button class="pv-tab" data-mode="b">B · 深色仪表盘</button>
+      <button class="pv-tab" data-mode="c">C · 浅色蓝图</button>
+    </div>
+    <span class="pv-sep"></span>
+    <span class="pv-hint">背景随鼠标变化</span>
+  </div>
+
+<script>
+/* =====================================================================
+   科技感动态背景 · 三方案（同一套渲染框架，各自一套算法）
+   全部走 #bg-canvas 单一画布层：铺满视口、z-index:-1、不接收事件。
+   鼠标位置统一由 mount() 提供（P.x/P.y 为缓动值，P.tx/P.ty 为目标值）。
+   ===================================================================== */
+(() => {
+  "use strict";
+
+  const TAU = Math.PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rgba = ([r, g, b], a) => `rgba(${r}, ${g}, ${b}, ${a})`;
+
+  const GREEN = [47, 122, 61];
+  const TEAL = [51, 122, 110];
+  const GOLD = [183, 134, 40];
+  const NEON = [63, 208, 192];     // B · 霓虹青
+  const NEON_G = [63, 191, 118];   // B · 霓虹绿
+  const COOL = [46, 106, 120];     // C · 冷青
+
+  /* ---------- 统一挂载：尺寸、鼠标、可见性、主循环 ---------- */
+  function mount(canvas, engine) {
+    const ctx = canvas.getContext("2d");
+    const P = { x: -1, y: -1, tx: -1, ty: -1 };
+    let w = 0, h = 0, state = null, raf = 0, last = 0, running = false, resizeTimer = 0;
+
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = window.innerWidth;
+      h = window.innerHeight;
+      canvas.width = Math.max(1, Math.round(w * dpr));
+      canvas.height = Math.max(1, Math.round(h * dpr));
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (P.tx < 0) { P.tx = P.x = w / 2; P.ty = P.y = h * 0.38; }
+      state = engine.init(w, h, P);
+    }
+
+    function frame(now) {
+      raf = requestAnimationFrame(frame);
+      const dt = last ? Math.min(now - last, 50) : 16.67;
+      last = now;
+      engine.step(state, dt, P, w, h);
+      engine.draw(ctx, state, now, P, w, h);
+    }
+
+    function start() { if (running) return; running = true; last = 0; raf = requestAnimationFrame(frame); }
+    function stop() { running = false; if (raf) cancelAnimationFrame(raf); raf = 0; last = 0; }
+
+    const onMove = (e) => { P.tx = e.clientX; P.ty = e.clientY; };
+    const onOut = (e) => { if (e.relatedTarget) return; P.tx = w / 2; P.ty = h * 0.38; };
+    const onResize = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { resize(); if (!running) engine.draw(ctx, state, 0, P, w, h); }, 160);
+    };
+    const onVis = () => { if (document.hidden) stop(); else start(); };
+
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("mouseout", onOut);
+    window.addEventListener("resize", onResize);
+    document.addEventListener("visibilitychange", onVis);
+
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+    resize();
+    if (reduce.matches) engine.draw(ctx, state, 0, P, w, h);   // 减弱动效：只画静态一帧
+    else start();
+
+    return {
+      stop,
+      destroy() {
+        stop();
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("mouseout", onOut);
+        window.removeEventListener("resize", onResize);
+        document.removeEventListener("visibilitychange", onVis);
+      },
+    };
+  }
+
+  /* =====================================================================
+     方案 A · 淡绿科技（与现有护眼纸面同一套色）
+     透视点阵（光标处提亮放大 + 视差偏移）+ 神经连络网（光标牵引）+ 辉光 + 扫描带
+     ===================================================================== */
+  const engineA = {
+    init(w, h) {
+      const count = clamp(Math.round((w * h) / 26000), 38, 104);
+      const nodes = [];
+      for (let i = 0; i < count; i++) {
+        nodes.push({
+          x: Math.random() * w, y: Math.random() * h,
+          vx: (Math.random() - 0.5) * 0.22, vy: (Math.random() - 0.5) * 0.22,
+          r: 1.1 + Math.random() * 1.3,
+          teal: Math.random() < 0.34, gold: Math.random() < 0.07, pull: 0,
+        });
+      }
+      return { nodes };
+    },
+    step(s, dt, P, w, h) {
+      const k = Math.min(dt / 16.67, 3);
+      const follow = Math.min(1, 0.09 * k);
+      for (const n of s.nodes) {
+        n.x += n.vx * k; n.y += n.vy * k;
+        if (n.x < -20) { n.x = -20; n.vx = Math.abs(n.vx); }
+        else if (n.x > w + 20) { n.x = w + 20; n.vx = -Math.abs(n.vx); }
+        if (n.y < -20) { n.y = -20; n.vy = Math.abs(n.vy); }
+        else if (n.y > h + 20) { n.y = h + 20; n.vy = -Math.abs(n.vy); }
+        n.pull = 0;
+      }
+      P.x += (P.tx - P.x) * follow;
+      P.y += (P.ty - P.y) * follow;
+    },
+    draw(ctx, s, now, P, w, h) {
+      ctx.clearRect(0, 0, w, h);
+
+      // 光标辉光：先点亮背景
+      const glowR = 340;
+      const g = ctx.createRadialGradient(P.x, P.y, 0, P.x, P.y, glowR);
+      g.addColorStop(0, "rgba(255,255,255,.40)");
+      g.addColorStop(0.38, rgba(GREEN, 0.08));
+      g.addColorStop(1, rgba(GREEN, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(P.x - glowR, P.y - glowR, glowR * 2, glowR * 2);
+
+      // 斜向扫描带：缓慢掠过，给静态纸面持续流动感
+      const band = 300, span = w + h + band * 2;
+      const sp = ((now % 11000) / 11000) * span - band;
+      const sg = ctx.createLinearGradient(sp / 2, sp / 2, (sp + band * 2) / 2, (sp + band * 2) / 2);
+      sg.addColorStop(0, "rgba(255,255,255,0)");
+      sg.addColorStop(0.5, "rgba(255,255,255,.17)");
+      sg.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = sg;
+      ctx.fillRect(0, 0, w, h);
+
+      // 透视点阵：越靠下视差越大；光标附近的点提亮放大（间距/底色与原有 CSS 点阵一致）
+      const GRID = 24, PARALLAX = 22, NEAR_R = 250;
+      const ox = (P.x - w / 2) / w, oy = (P.y - h / 2) / h;
+      const buckets = [[], [], [], [], [], []];
+      ctx.fillStyle = rgba(GREEN, 0.10);
+      for (let gy = GRID / 2; gy < h + GRID; gy += GRID) {
+        const depth = 0.35 + 0.85 * (gy / h);
+        const y = gy + oy * PARALLAX * depth;
+        for (let gx = GRID / 2; gx < w + GRID; gx += GRID) {
+          const x = gx + ox * PARALLAX * depth;
+          const dx = x - P.x, dy = y - P.y;
+          const near = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / NEAR_R);
+          if (near < 0.04) { ctx.fillRect(x - 1, y - 1, 2, 2); continue; }
+          buckets[Math.min(5, Math.floor(near * 6))].push(x, y, 2 + near * 2.4);
+        }
+      }
+      for (let b = 0; b < buckets.length; b++) {
+        const list = buckets[b];
+        if (!list.length) continue;
+        ctx.fillStyle = rgba(GREEN, 0.10 + ((b + 1) / 6) * 0.26);
+        for (let i = 0; i < list.length; i += 3) {
+          const size = list[i + 2];
+          ctx.fillRect(list[i] - size / 2, list[i + 1] - size / 2, size, size);
+        }
+      }
+
+      // 节点之间：近邻连线
+      const LINK = 132, L2 = LINK * LINK;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < s.nodes.length; i++) {
+        const a = s.nodes[i];
+        for (let j = i + 1; j < s.nodes.length; j++) {
+          const b = s.nodes[j];
+          const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+          if (d2 > L2) continue;
+          ctx.strokeStyle = rgba(GREEN, (1 - Math.sqrt(d2) / LINK) * 0.17);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      }
+
+      // 光标牵引：把附近节点连到光标（并记录牵引强度供节点发光）
+      const CL = 210, CL2 = CL * CL;
+      for (const n of s.nodes) {
+        const dx = n.x - P.x, dy = n.y - P.y, d2 = dx * dx + dy * dy;
+        if (d2 > CL2) continue;
+        const t = 1 - Math.sqrt(d2) / CL;
+        n.pull = t;
+        ctx.strokeStyle = rgba(n.gold ? GOLD : (n.teal ? TEAL : GREEN), t * 0.38);
+        ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(n.x, n.y); ctx.stroke();
+      }
+
+      for (const n of s.nodes) {
+        const color = n.gold ? GOLD : (n.teal ? TEAL : GREEN);
+        ctx.fillStyle = rgba(color, 0.34 + n.pull * 0.5);
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r + n.pull * 1.6, 0, TAU); ctx.fill();
+        if (n.pull > 0.05) {
+          ctx.strokeStyle = rgba(color, n.pull * 0.3);
+          ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 5 + n.pull * 6, 0, TAU); ctx.stroke();
+        }
+      }
+    },
+  };
+
+  /* =====================================================================
+     方案 B · 深色仪表盘
+     透视地平线网格（横线向观察者滚动）+ 星点粒子 + 光标霓虹光源
+     鼠标左右移动 = 视角左右转；上下移动 = 地平线俯仰
+     ===================================================================== */
+  const engineB = {
+    init(w, h) {
+      const count = clamp(Math.round((w * h) / 17000), 60, 150);
+      const stars = [];
+      for (let i = 0; i < count; i++) {
+        stars.push({
+          x: Math.random() * w, y: Math.random() * h,
+          r: 0.6 + Math.random() * 1.5,
+          vy: 0.08 + Math.random() * 0.26,
+          ph: Math.random() * TAU,
+        });
+      }
+      return { stars };
+    },
+    step(s, dt, P, w, h) {
+      const k = Math.min(dt / 16.67, 3);
+      for (const p of s.stars) {
+        p.y -= p.vy * k;                        // 缓慢上升：空间"在动"的底层信号
+        if (p.y < -12) { p.y = h + 12; p.x = Math.random() * w; }
+        p.ph += 0.02 * k;
+      }
+      P.x += (P.tx - P.x) * Math.min(1, 0.05 * k);   // 视角转动要"沉稳"，缓动更慢
+      P.y += (P.ty - P.y) * Math.min(1, 0.05 * k);
+    },
+    draw(ctx, s, now, P, w, h) {
+      ctx.clearRect(0, 0, w, h);
+      const horizon = h * 0.55 - ((P.y - h / 2) / h) * 110;   // 俯仰
+      const vpx = w / 2 + (P.x - w / 2) * 0.42;               // 视点（消失点）横向位移
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, horizon, w, h - horizon);
+      ctx.clip();
+
+      // 竖线：由消失点向地面发散
+      const cols = 13;
+      for (let i = -cols; i <= cols; i++) {
+        const bx = vpx + i * (w / cols) * 1.4;
+        const a = 0.03 + 0.15 * (1 - Math.min(1, Math.abs(i) / cols));
+        ctx.strokeStyle = rgba(NEON, a);
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(vpx, horizon); ctx.lineTo(bx, h); ctx.stroke();
+      }
+
+      // 横线：向观察者滚动（远处密、近处疏），亮度随距离递增
+      const N = 24, phase = (now / 2800) % 1;
+      for (let i = 0; i <= N; i++) {
+        const t = (i + phase) / N;
+        if (t <= 0 || t >= 1) continue;
+        const y = horizon + (h - horizon) * Math.pow(t, 2.1);
+        const a = 0.05 + 0.22 * Math.pow(t, 0.7);
+        const lg = ctx.createLinearGradient(0, 0, w, 0);
+        lg.addColorStop(0, rgba(NEON, 0));
+        lg.addColorStop(0.5, rgba(NEON, a));
+        lg.addColorStop(1, rgba(NEON, 0));
+        ctx.strokeStyle = lg;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+
+      // 地平线：一条更亮的分界
+      const hg = ctx.createLinearGradient(0, 0, w, 0);
+      hg.addColorStop(0, rgba(NEON, 0));
+      hg.addColorStop(0.5, rgba(NEON, 0.42));
+      hg.addColorStop(1, rgba(NEON, 0));
+      ctx.strokeStyle = hg;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(0, horizon); ctx.lineTo(w, horizon); ctx.stroke();
+      ctx.restore();
+
+      // 星点在深色底上用叠加混合，才有真正的发光感
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (const p of s.stars) {
+        const dx = p.x - P.x, dy = p.y - P.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const lit = Math.max(0, 1 - d / 320);
+        const a = (0.20 + 0.34 * (0.5 + 0.5 * Math.sin(p.ph)) + lit * 0.5);
+        ctx.fillStyle = rgba(lit > 0.25 ? NEON : NEON_G, Math.min(0.9, a));
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r + lit * 1.4, 0, TAU); ctx.fill();
+      }
+      // 光标光源
+      const glowR = 380;
+      const g = ctx.createRadialGradient(P.x, P.y, 0, P.x, P.y, glowR);
+      g.addColorStop(0, rgba(NEON, 0.20));
+      g.addColorStop(0.35, rgba(NEON_G, 0.08));
+      g.addColorStop(1, rgba(NEON_G, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(P.x - glowR, P.y - glowR, glowR * 2, glowR * 2);
+      ctx.restore();
+    },
+  };
+
+  /* =====================================================================
+     方案 C · 浅色蓝图
+     两级刻度网格 + 光标"手电筒"局部提亮 + 移动涟漪 + CAD 式十字准星
+     科技感来自精密刻度，而不是发光——保持浅色护眼
+     ===================================================================== */
+  const engineC = {
+    init() { return { ripples: [], lastX: -1, lastY: -1 }; },
+    step(s, dt, P, w, h) {
+      const k = Math.min(dt / 16.67, 3);
+      P.x += (P.tx - P.x) * Math.min(1, 0.11 * k);
+      P.y += (P.ty - P.y) * Math.min(1, 0.11 * k);
+
+      // 移动够远才发一圈涟漪，避免高频抖动时糊成一片
+      if (s.lastX < 0) { s.lastX = P.x; s.lastY = P.y; }
+      const moved = Math.hypot(P.x - s.lastX, P.y - s.lastY);
+      if (moved > 46) {
+        s.ripples.push({ x: P.x, y: P.y, r: 8, a: 0.30 });
+        s.lastX = P.x; s.lastY = P.y;
+        if (s.ripples.length > 14) s.ripples.shift();
+      }
+      for (let i = s.ripples.length - 1; i >= 0; i--) {
+        const rp = s.ripples[i];
+        rp.r += 1.5 * k;
+        rp.a -= 0.0055 * k;
+        if (rp.a <= 0) s.ripples.splice(i, 1);
+      }
+    },
+    draw(ctx, s, now, P, w, h) {
+      ctx.clearRect(0, 0, w, h);
+      const minor = 20, major = 100;
+
+      const lines = (step, alpha) => {
+        ctx.strokeStyle = rgba(COOL, alpha);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += step) { ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); }
+        for (let y = 0; y <= h; y += step) { ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); }
+        ctx.stroke();
+      };
+
+      lines(minor, 0.035);   // 细刻度
+      lines(major, 0.075);   // 主刻度
+
+      // 手电筒：以光标为中心裁一个圆，圆内重画更亮的网格
+      const spotR = 190;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(P.x, P.y, spotR, 0, TAU);
+      ctx.clip();
+      lines(minor, 0.075);
+      lines(major, 0.16);
+      ctx.restore();
+
+      // 对角光带：缓慢流动
+      const band = 420, span = w + h + band * 2;
+      const sp = ((now % 15000) / 15000) * span - band;
+      const sg = ctx.createLinearGradient(sp / 2, sp / 2, (sp + band * 2) / 2, (sp + band * 2) / 2);
+      sg.addColorStop(0, "rgba(255,255,255,0)");
+      sg.addColorStop(0.5, "rgba(255,255,255,.20)");
+      sg.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = sg;
+      ctx.fillRect(0, 0, w, h);
+
+      // CAD 式十字准星：贯穿屏幕的极淡基准线
+      ctx.strokeStyle = rgba(COOL, 0.22);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, P.y + 0.5); ctx.lineTo(w, P.y + 0.5);
+      ctx.moveTo(P.x + 0.5, 0); ctx.lineTo(P.x + 0.5, h);
+      ctx.stroke();
+
+      // 涟漪
+      for (const rp of s.ripples) {
+        ctx.strokeStyle = rgba(COOL, rp.a);
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(rp.x, rp.y, rp.r, 0, TAU); ctx.stroke();
+      }
+
+      // 光标处：同心刻度圈 + 中心点
+      ctx.strokeStyle = rgba(COOL, 0.30);
+      ctx.beginPath(); ctx.arc(P.x, P.y, 26, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = rgba(COOL, 0.16);
+      ctx.beginPath(); ctx.arc(P.x, P.y, 52, 0, TAU); ctx.stroke();
+      ctx.fillStyle = rgba(COOL, 0.45);
+      ctx.beginPath(); ctx.arc(P.x, P.y, 2.2, 0, TAU); ctx.fill();
+    },
+  };
+
+  /* =====================================================================
+     预览：卡片渲染（结构与 app.js 的 cardHtml 一致）+ 方案切换
+     ===================================================================== */
+  const ITEMS = [
+    { title: "从贝叶斯视角理解反向传播：为什么深度学习需要概率论", type: "文章", author: "苏剑林", freq: "11 天前收藏", score: [82, 74, 88],
+      summary: "很多人把反向传播当作纯粹的链式法则练习。但如果从贝叶斯的角度看，整个训练过程其实是在做后验推断——每个样本都在悄悄修正你对参数分布的信念，而学习率就是你愿意为单个样本改变信念的幅度。" },
+    { title: "Transformer 为什么需要位置编码？一个从零推导的解释", type: "回答", author: "李沐", freq: "3 天前收藏", score: [91, 86, 79],
+      summary: "自注意力本身是置换不变的，也就是说把句子打乱它看到的完全一样。位置编码的作用不是「告诉模型顺序」，而是给每个位置一个可区分的坐标系，让注意力有东西可以对齐。" },
+    { title: "知识蒸馏的温度参数到底在做什么", type: "回答", author: "邱锡鹏", freq: "昨天收藏", score: [68, 92, 85],
+      summary: "软标签携带的信息量远大于 one-hot。温度 T 升高会让教师模型的输出分布更平滑，暴露出类别之间「次优但相关」的相似性——这正是学生模型能学到的东西。" },
+    { title: "读了 200 篇论文之后，我改变了做笔记的方式", type: "文章", author: "王垠", freq: "5 小时前收藏", score: [55, 61, 72],
+      summary: "笔记的价值不在于记录，而在于强制你用自己的话重述一遍。凡是无法重述的段落，说明你并没有真的读懂——它只是经过了你的眼睛，没有经过你的脑子。" },
+  ];
+
+  function radarSvg(metrics) {
+    const W = 78, H = 70, cx = 39, cy = 41, R = 34;
+    const rad = (d) => (d * Math.PI) / 180;
+    const pt = (a, r) => [cx + r * Math.cos(rad(a)), cy + r * Math.sin(rad(a))];
+    const axes = metrics.map((v, i) => [v, [-90, 30, 150][i]]);
+    let grid = "";
+    for (const level of [1 / 3, 2 / 3, 1]) {
+      const pts = axes.map(([, a]) => pt(a, R * level).map((v) => v.toFixed(1)).join(",")).join(" ");
+      grid += `<polygon points="${pts}" class="radar-grid"/>`;
+    }
+    const spokes = axes.map(([, a]) => {
+      const [x, y] = pt(a, R);
+      return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="radar-spoke"/>`;
+    }).join("");
+    const dataPts = axes.map(([v, a]) => pt(a, (R * Math.min(100, v)) / 100).map((v2) => v2.toFixed(1)).join(",")).join(" ");
+    const dots = axes.map(([v, a]) => {
+      const [x, y] = pt(a, (R * Math.min(100, v)) / 100);
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" class="radar-dot"/>`;
+    }).join("");
+    return `<svg class="radar" viewBox="0 0 ${W} ${H}" role="img" aria-label="三指标雷达图">${grid}${spokes}<polygon points="${dataPts}" class="radar-area"/>${dots}</svg>`;
+  }
+
+  function renderCards() {
+    const names = ["认可度", "信息量", "准确性"];
+    document.getElementById("cards").innerHTML = ITEMS.map((it) => `
+      <article class="card">
+        <a class="card-title" href="#">${it.title}</a>
+        <div class="meta">
+          <span class="tag">${it.type}</span>
+          <span class="meta-author"><span class="author-avatar">${it.author.slice(0, 1)}</span><b class="author-name">${it.author}</b></span>
+          <span>${it.freq}</span>
+        </div>
+        <div class="card-main">
+          <p class="summary">${it.summary}</p>
+          <div class="card-radar">
+            ${radarSvg(it.score)}
+            <div class="radar-labels">${it.score.map((v, i) => `<span>${names[i]}<b>${v}</b></span>`).join("")}</div>
+          </div>
+        </div>
+        <div class="foot">依据：收藏 ${20 + it.score[0]} · 赞同 ${300 + it.score[1] * 12} · 评论 ${8 + it.score[2]}</div>
+      </article>`).join("");
+  }
+
+  const NOTES = {
+    a: { t: "A · 淡绿科技", b: "在你现在的浅绿纸面上加两层：<b>透视点阵</b>（越靠屏幕下方视差越大、光标附近的点提亮放大）和<b>神经连络网</b>（节点漂移、近邻连线，光标把附近节点牵住）。跟随方式＝视差偏移 + 辉光跟随 + 连线牵引。", f: "改动最小，和现有风格<b>无缝</b>，风险最低。" },
+    b: { t: "B · 深色仪表盘", b: "深墨绿底 + <b>透视地平线网格</b>（横线不断向观察者滚动）+ 星点粒子，光标是一个青绿色光源。跟随方式＝<b>鼠标左右＝视角左右转，上下＝地平线俯仰</b>。", f: "科技感和「演示冲击力」最强，但要整套换深色配色，和护眼纸面的调性<b>断开</b>。" },
+    c: { t: "C · 浅色蓝图", b: "浅冷底 + <b>两级刻度网格</b>，光标像手电筒照亮局部网格，移动时留下涟漪，还有贯穿屏幕的 CAD 十字基准线。跟随方式＝<b>局部照亮 + 涟漪跟随</b>。", f: "科技感来自「精密刻度」而不是发光，<b>仍保持浅色护眼</b>，是 A 与 B 之间的折中。" },
+  };
+
+  let active = null;
+  function setMode(mode) {
+    if (active) active.destroy();
+    document.body.className = "pv mode-" + mode;
+    const note = NOTES[mode];
+    document.getElementById("pv-note").innerHTML = `<h4>${note.t}</h4>${note.b}<div style="margin-top:7px;padding-top:7px;border-top:1px dashed var(--line)">${note.f}</div>`;
+    const engine = mode === "a" ? engineA : mode === "b" ? engineB : engineC;
+    active = mount(document.getElementById("bg-canvas"), engine);
+    for (const btn of document.querySelectorAll(".pv-tab")) btn.classList.toggle("on", btn.dataset.mode === mode);
+  }
+
+  for (const btn of document.querySelectorAll(".pv-tab")) {
+    btn.addEventListener("click", () => setMode(btn.dataset.mode));
+  }
+
+  renderCards();
+  setMode("a");
+})();
+</script>
+</body>
+</html>
