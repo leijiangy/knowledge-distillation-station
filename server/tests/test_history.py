@@ -1,45 +1,34 @@
 # -*- coding: utf-8 -*-
-"""学习记录的折叠逻辑（软删除）：open / dismissed 事件流 → 记录列表"""
+"""学习记录的折叠逻辑：open 埋点 → 记录列表（每篇取最后读到的那一段）"""
 from core.reading_store import collapse_history
 
 
-def ev(key: str, event: str, at: int, seg: int = 0) -> dict:
-    return {"article_key": key, "event": event, "at": at, "seg_index": seg}
+def rec(key: str, at: int, seg: int = 0) -> dict:
+    return {"article_key": key, "at": at, "seg_index": seg}
 
 
-def test_open_shows_record():
-    rows = [ev("a", "open", 100, 3)]
-    assert collapse_history(rows) == [{"article_key": "a", "seg_index": 3, "at": 100}]
-
-
-def test_dismissed_hides_record():
-    rows = [ev("a", "open", 100), ev("a", "dismissed", 200)]
-    assert collapse_history(rows) == []
-
-
-def test_reopen_after_dismiss_brings_record_back():
-    rows = [ev("a", "open", 100), ev("a", "dismissed", 200), ev("a", "open", 300, 5)]
-    assert collapse_history(rows) == [{"article_key": "a", "seg_index": 5, "at": 300}]
-
-
-def test_same_second_prefers_dismissed():
-    # 时间戳精度到秒：同秒既有 open 又有 dismissed 时按隐藏处理（两种到达顺序都要成立）
-    assert collapse_history([ev("a", "open", 100), ev("a", "dismissed", 100)]) == []
-    assert collapse_history([ev("a", "dismissed", 100), ev("a", "open", 100)]) == []
+def test_single_open_shows_record():
+    assert collapse_history([rec("a", 100, 3)]) == [{"article_key": "a", "seg_index": 3, "at": 100}]
 
 
 def test_latest_open_wins_for_segment():
-    rows = [ev("a", "open", 100, 1), ev("a", "open", 300, 7)]
+    rows = [rec("a", 100, 1), rec("a", 300, 7)]
     assert collapse_history(rows) == [{"article_key": "a", "seg_index": 7, "at": 300}]
 
 
-def test_sorted_by_recency_and_independent_per_article():
-    rows = [ev("a", "open", 100), ev("b", "open", 300), ev("a", "dismissed", 400)]
-    assert collapse_history(rows) == [{"article_key": "b", "seg_index": 0, "at": 300}]
+def test_sorted_by_recency():
+    rows = [rec("a", 100), rec("b", 300), rec("c", 200)]
+    assert [r["article_key"] for r in collapse_history(rows)] == ["b", "c", "a"]
+
+
+def test_articles_are_independent():
+    rows = [rec("a", 100, 2), rec("b", 200, 5), rec("a", 300, 4)]
+    got = {r["article_key"]: r["seg_index"] for r in collapse_history(rows)}
+    assert got == {"a": 4, "b": 5}
 
 
 def test_ignores_rows_without_key_and_empty_input():
-    rows = [{"event": "open", "at": 100}, ev("a", "open", 50)]
+    rows = [{"at": 100}, rec("a", 50)]
     assert collapse_history(rows) == [{"article_key": "a", "seg_index": 0, "at": 50}]
     assert collapse_history([]) == []
     assert collapse_history(None) == []

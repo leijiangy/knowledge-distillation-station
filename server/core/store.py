@@ -131,3 +131,10 @@ async def count() -> int:
         return int(content_range.split("/")[-1])
     except ValueError:
         return len(resp.json())
+
+
+async def delete(key: str) -> None:
+    """删除一篇全文。⚠️ 不可恢复，且全文是按内容键全局共享的，删了所有人都要重新保存"""
+    _check_config()
+    resp = await _get_client().delete(f"{_REST}/distilled", params={"key": f"eq.{key}"})
+    resp.raise_for_status()

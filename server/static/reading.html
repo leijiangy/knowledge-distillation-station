@@ -1036,7 +1036,7 @@
             + (label ? '<span class="sub-count">' + label + '</span>' : "")
             + '</a>'
             + '<button type="button" class="nav-subdel" data-del="' + esc(it.url || "") + '"'
-            + ' title="删除这条学习记录" aria-label="删除这条学习记录">×</button>'
+            + ' title="删除这条学习记录，并把这篇重置为未保存全文" aria-label="删除这条学习记录">×</button>'
             + "</div>";
         }).join("");
       }
@@ -1062,6 +1062,8 @@
         btn.disabled = true;
         try {
           await api("/api/reading/history?url=" + encodeURIComponent(url), { method: "DELETE" });
+          // 删的正是手上这篇：全文已被重置，这个会话没法继续，回起始页重新选一篇
+          if (histNormKey(url) === histNormKey(state.url)) { location.href = "/reading.html"; return; }
           histCache = (histCache || []).filter((it) => it.url !== url);
           renderHistList(histCache);
         } catch (err) {

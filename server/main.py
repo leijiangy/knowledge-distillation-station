@@ -614,7 +614,11 @@ async def reading_history(request: Request):
 
 @app.delete("/api/reading/history")
 async def reading_history_delete(request: Request, url: str):
-    """删除一条学习记录（软删除：追加 dismissed 埋点，读取时据此隐藏）"""
+    """删除一条学习记录，并把该文章重置为「未保存全文」的状态（可以重新用书签保存）
+
+    ⚠️ 全文是按内容键全局共享的：重置会连带删掉这篇的分段/解释/位置标记，
+    其他用户对这篇的学习进度与标记也会一起失效（设计取舍见 docs/学习会话设计-定稿.md 7.1）。
+    """
     session = _current_session(request)
     _token, login_error = _resolve_token(session)
     if login_error:
@@ -622,10 +626,14 @@ async def reading_history_delete(request: Request, url: str):
     key = _norm_key(url)
     if not key:
         return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "缺少文章地址。"}}
+    uid = _user_key_id(session)
     try:
-        await reading_store.dismiss_history(key, _user_key_id(session))
+        # 顺序：先清锚在全文上的分段与解释，再清本人的记录，最后删全文本身
+        await reading_store.delete_plan_and_nodes(key)
+        await reading_store.delete_user_events(key, uid)
+        await store.delete(key)
     except Exception as exc:
-        print(f"[reading] 删除学习记录失败：{exc}")
+        print(f"[reading] 重置文章失败：{exc}")
         return {"ok": False, "error": {"code": "DB_FAILED", "message": "删除失败，请稍后再试。"}}
     return {"ok": True}
 

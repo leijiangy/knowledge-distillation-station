@@ -769,7 +769,7 @@
         + (label ? '<span class="sub-count">' + label + '</span>' : "")
         + '</a>'
         + '<button type="button" class="nav-subdel" data-del="' + escapeHtml(it.url || "") + '"'
-        + ' title="删除这条学习记录" aria-label="删除这条学习记录">×</button>'
+        + ' title="删除这条学习记录，并把这篇重置为未保存全文" aria-label="删除这条学习记录">×</button>'
         + "</div>";
     }).join("");
   }
@@ -809,6 +809,11 @@
       await api("/api/reading/history?url=" + encodeURIComponent(url), { method: "DELETE" });
       histItems = histItems.filter((it) => it.url !== url);
       renderHistList();
+      // 这篇的全文已被重置：收藏列表的卡片要一起回到「🧪 去保存全文」。
+      // 两个视图都重绘（切视图只是显隐切换、不重绘，这里不重绘的话卡片会一直显示旧状态）
+      await refreshDistilled();
+      if (allItems.length) renderCards();
+      if (recommendItems.length) renderRecommendCards();
     } catch (err) {
       btn.disabled = false;
       btn.classList.remove("confirm");

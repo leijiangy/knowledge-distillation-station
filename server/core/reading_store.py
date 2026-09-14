@@ -148,43 +148,57 @@ async def append_event(article_key: str, uid: str, event: str,
 
 
 def collapse_history(rows: list) -> list:
-    """把 open / dismissed 事件流折叠成学习记录（纯函数，便于测试）
-
-    每篇文章只认最新一条事件：最新是 dismissed 就不出现在记录里（该条记录被删除了）。
-    同一秒内既有 open 又有 dismissed 时按 dismissed 算（时间戳精度到秒，保守地隐藏）。
-    """
+    """把 open 埋点折叠成学习记录：每篇文章只保留最后读到的那一段（纯函数，便于测试）"""
     latest = {}
     for row in rows or []:
         key = row.get("article_key")
         if not key:
             continue
         at = row.get("at") or 0
-        event = row.get("event") or ""
         cur = latest.get(key)
-        if cur is None or at > cur["at"] or (at == cur["at"] and event == "dismissed"):
-            latest[key] = {"at": at, "event": event, "seg_index": row.get("seg_index") or 0}
+        if cur is None or at > cur["at"]:
+            latest[key] = {"at": at, "seg_index": row.get("seg_index") or 0}
     out = [{"article_key": key, "seg_index": v["seg_index"], "at": v["at"]}
-           for key, v in latest.items() if v["event"] == "open"]
+           for key, v in latest.items()]
     out.sort(key=lambda r: r["at"], reverse=True)
     return out
 
 
 async def list_recent_opened(uid: str, limit: int = 200) -> list:
-    """学习记录：每篇文章最后读到哪一段（见 collapse_history 的折叠规则）
-
-    删除记录走软删除：追加一条 dismissed 埋点，不销毁已有埋点（删除率/接受率还要用）；
-    之后重新打开该文章会产生新的 open，记录随之回来。
-    """
+    """学习记录：每篇文章最后读到哪一段（来自 open 埋点）"""
     _check_config()
     resp = await _get_client().get(
         f"{_REST}/reading_events",
-        params={"select": "article_key,seg_index,event,at", "uid": f"eq.{uid}",
-                "event": "in.(open,dismissed)", "order": "at.desc", "limit": str(limit)},
+        params={"select": "article_key,seg_index,at", "uid": f"eq.{uid}",
+                "event": "eq.open", "order": "at.desc", "limit": str(limit)},
     )
     resp.raise_for_status()
     return collapse_history(resp.json())
 
 
-async def dismiss_history(article_key: str, uid: str) -> None:
-    """删除一条学习记录（软删除：只追加埋点，读取时据此隐藏）"""
-    await append_event(article_key, uid, "dismissed")
+async def delete_plan_and_nodes(article_key: str) -> int:
+    """删掉一篇的段落划分与全部节点，返回删除的节点数。
+
+    全文被重置后，锚在它上面的段落切点与位置标记（pos_start / pos_end）失去参照，
+    留着只会在重新保存全文后锚到错的文字上，所以必须一起清。
+    """
+    _check_config()
+    resp = await _get_client().get(
+        f"{_REST}/reading_nodes", params={"article_key": f"eq.{article_key}", "select": "id"})
+    resp.raise_for_status()
+    count = len(resp.json())
+    for table in ("reading_nodes", "reading_articles"):
+        resp = await _get_client().delete(f"{_REST}/{table}",
+                                          params={"article_key": f"eq.{article_key}"})
+        resp.raise_for_status()
+    return count
+
+
+async def delete_user_events(article_key: str, uid: str) -> None:
+    """删掉某个用户在某一篇上的埋点（删的是他的学习记录本身，不动别人的）"""
+    _check_config()
+    resp = await _get_client().delete(
+        f"{_REST}/reading_events",
+        params={"article_key": f"eq.{article_key}", "uid": f"eq.{uid}"},
+    )
+    resp.raise_for_status()
