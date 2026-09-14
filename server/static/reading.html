@@ -87,6 +87,23 @@
       border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.6);
       user-select: text; overflow-anchor: none;   /* 关闭滚动锚定：重渲染时滚动位置由代码控制 */
     }
+    /* 原文配图：文章级，放在左栏文本下方（原文里图片的字符位置没有记录，所以不做内联） */
+    .rd-figs {
+      flex: 0 0 auto; margin-top: 10px; padding: 8px 9px 9px;
+      border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.6);
+      max-height: 30%; overflow-y: auto;
+    }
+    .rd-figs-head { font-size: 12px; color: var(--ink-3); font-weight: 700; margin-bottom: 7px; }
+    .rd-figs-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .rd-fig {
+      width: 76px; height: 76px; padding: 0; display: block; cursor: pointer;
+      border: 1px solid var(--line); border-radius: 6px; background: none; overflow: hidden;
+    }
+    .rd-fig img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .rd-fig:hover { border-color: var(--green); }
+    .rd-fig.active { border-color: var(--green); box-shadow: 0 0 0 2px rgba(47,122,61,.18); }
+    .rd-fig.busy { opacity: .55; }
+
     .rd-explain {
       font-size: 14px; line-height: 1.95; color: var(--ink); white-space: pre-wrap;
       border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px;
@@ -270,6 +287,7 @@
         <div class="rd-pane">
           <div class="rd-pane-label" id="rd-left-label">本段原文</div>
           <div class="rd-text" id="rd-text"></div>
+          <div class="rd-figs" id="rd-figs" hidden></div>
         </div>
         <div class="rd-pane rd-side" id="rd-side">
           <div class="rd-pane-label" id="rd-right-label">本段解释</div>
@@ -672,6 +690,42 @@
         return (state.segNodes || []).find((n) => n.id === id);
       }
 
+      // ---------- 原文配图（文章级）：点一张 → 右栏给这张图的解释 ----------
+      function renderFigs() {
+        const box = $("rd-figs");
+        if (!box) return;
+        const imgs = (state.article && state.article.images) || [];
+        if (!imgs.length) { box.hidden = true; box.innerHTML = ""; return; }
+        box.hidden = false;
+        // referrerpolicy：知乎图床有防盗链，卡片那边也是这么处理的
+        box.innerHTML = '<div class="rd-figs-head">原文配图 ' + imgs.length + " 张 · 点击看解释</div>"
+          + '<div class="rd-figs-row">' + imgs.map((u) =>
+            '<button type="button" class="rd-fig" data-fig="' + esc(u) + '" title="解释这张图">'
+            + '<img src="' + esc(u) + '" alt="" loading="lazy" referrerpolicy="no-referrer"></button>'
+          ).join("") + "</div>";
+      }
+
+      async function explainFigure(btn) {
+        const image = btn.getAttribute("data-fig") || "";
+        if (!image || !state.url) return;
+        const box = $("rd-figs");
+        if (box) box.querySelectorAll(".rd-fig").forEach((b) => b.classList.toggle("active", b === btn));
+        showAnswer("这张图说明了什么？", "正在看图……", null);
+        btn.classList.add("busy");
+        try {
+          const data = await api("/api/reading/image", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: state.url, image,
+                                   context: (state.seg && state.seg.text) || "" }),
+          });
+          KDM.renderMathInto($("rd-answer-body"), data.explain || "（没有拿到解释）");
+        } catch (err) {
+          KDM.renderMathInto($("rd-answer-body"), "解释失败：" + err.message);
+        } finally {
+          btn.classList.remove("busy");
+        }
+      }
+
       // ---------- 渲染一段 ----------
       function segMarks(nodes) {
         return (nodes || [])
@@ -779,6 +833,7 @@
           state.url = url;
           state.article = data.article;
           KDM.renderMathInto($("rd-title"), data.article.title || "精读");
+          renderFigs();
           $("rd-title-link").href = url;   // 点标题回知乎原文
           loadAuthor(url, data.article.title || "", data.article.author);
           $("rd-start").hidden = true; $("rd-session").hidden = false;
@@ -1011,6 +1066,13 @@
       });
       $("rd-answer-close").addEventListener("click", hideAnswer);
       setupSelection();   // 划选：按住拖动 + 单击选整句（均不依赖原生文本选择）
+      const figsBox = $("rd-figs");
+      if (figsBox) {
+        figsBox.addEventListener("click", (e) => {
+          const fig = e.target.closest(".rd-fig");
+          if (fig) explainFigure(fig);
+        });
+      }
 
       // ---------- 学习记录下拉（有缓存即时渲染；打开文章后强制刷新以更新进度/高亮） ----------
       const histNormKey = (u) => {

@@ -341,8 +341,8 @@ async def ingest(request: Request):
     clean_images: list = []
     if isinstance(images, list):
         for item in images[:9]:
-            s = str(item or "").strip()
-            if s.startswith("http") and len(s) <= 500 and s not in clean_images:
+            s = zhihu.clean_image_url(item)
+            if s and s not in clean_images:
                 clean_images.append(s)
     key = _norm_key(url)
     existing = await store.get(key)
@@ -564,7 +564,8 @@ async def reading_open(request: Request):
     await reading_store.append_event(key, uid, "open", 0, None)
     return {"ok": True,
             "article": {"key": key, "title": item["title"], "summary": summary, "total": total,
-                        "author": _author_from_collections(uid, key)},
+                        "author": _author_from_collections(uid, key),
+                        "images": item.get("images") or []},
             "segment": payload}
 
 
@@ -741,6 +742,44 @@ async def reading_ask(request: Request):
     if node is None:
         return {"ok": False, "error": {"code": "CONFLICT", "message": "保存失败，请重试。"}}
     return {"ok": True, "node": node}
+
+
+@app.post("/api/reading/image")
+async def reading_image(request: Request):
+    """解释原文配图：按图片 URL 全局缓存（同一张图只生成一次，省额度）"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    if error:
+        return {"ok": False, "error": error}
+    image = zhihu.clean_image_url(body.get("image"))
+    if not image:
+        return {"ok": False, "error": {"code": "BAD_IMAGE", "message": "配图地址不合法。"}}
+    # 只解释这篇文章自己的配图：否则接口会变成任意图片的抓取+解释入口
+    if image not in [str(x) for x in (item.get("images") or [])]:
+        return {"ok": False, "error": {"code": "BAD_IMAGE", "message": "这张图不属于这篇文章。"}}
+    try:
+        cached = await reading_store.get_image_explanation(image)
+    except Exception as exc:
+        print(f"[reading] 读取配图解释失败：{exc}")
+        return {"ok": False, "error": {
+            "code": "DB_FAILED",
+            "message": "配图解释的存储不可用（需要在数据库建 image_explanations 表，见设计文档 7.2）。"}}
+    if cached:
+        return {"ok": True, "image": image, "explain": cached, "cached": True}
+    context = str(body.get("context") or "").strip()[:1200]
+    try:
+        data_url = await ai.fetch_image_data_url(image)
+        explain = await ai.explain_image(item["title"], item.get("summary") or "", context, data_url)
+    except ai.AIError as exc:
+        return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
+    try:
+        await reading_store.save_image_explanation(image, explain)
+    except Exception as exc:
+        print(f"[reading] 保存配图解释失败：{exc}")   # 存不下也要把结果给用户
+    return {"ok": True, "image": image, "explain": explain, "cached": False}
 
 
 @app.post("/api/reading/event")

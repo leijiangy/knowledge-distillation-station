@@ -6,12 +6,28 @@
 - favlists 无分页（服务端忽略 Offset）；favlist_contents 有 Offset/Limit 分页
 """
 import time
+from urllib.parse import urlparse
 
 import httpx
 
 from .config import settings
 
 TIMEOUT = 30.0
+
+# 只收知乎图床的配图：配图会被服务端抓取（转 base64 交给视觉模型），
+# 放开任意域名等于把 /api/ingest（无需登录）变成一个 SSRF 抓取器
+ALLOWED_IMAGE_HOSTS = ("zhimg.com", "zhihu.com")
+
+
+def clean_image_url(raw) -> str:
+    """校验配图地址，不合法返回空串"""
+    s = str(raw or "").strip()
+    if not s.startswith("http") or len(s) > 500:
+        return ""
+    host = (urlparse(s).hostname or "").lower()
+    if not any(host == h or host.endswith("." + h) for h in ALLOWED_IMAGE_HOSTS):
+        return ""
+    return s
 
 
 def client() -> httpx.AsyncClient:

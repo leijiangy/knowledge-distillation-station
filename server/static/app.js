@@ -70,7 +70,7 @@
       "var title=(document.title||'').replace(/^(\\([^)]*\\)\\s*)+/,'').replace(/ ?[-—|] ?知乎.*$/,'').trim();",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
       "var imgs=[];var list=el.querySelectorAll('img');",
-      "for(var i=0;i<list.length&&imgs.length<3;i++){",
+      "for(var i=0;i<list.length&&imgs.length<9;i++){",   // 上限与 /api/ingest 一致（精读页的配图栏要用）
       "var im=list[i];var cls=String(im.className||'');",
       "if(/avatar|emoji|icon|badge|logo|symbol|sticker/i.test(cls))continue;",
       "var s=im.currentSrc||im.getAttribute('src')||im.getAttribute('data-original')||im.getAttribute('data-actualsrc')||'';",
