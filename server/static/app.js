@@ -101,13 +101,17 @@
       "}",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
       "if(!confirm('保存这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
-      "var fromStation=location.hash.indexOf('kd=1')>=0;",
+      // 是否从站里来的：优先看 #kd=1 标记，其次看 referrer（从站里打开的新标签页带着我们的域名）。
+      // 知乎点开大图（灯箱）会改写地址、把 #kd=1 抹掉——只认标记就会既不跳转、又把内容存到错键上
+      "var fromStation=location.hash.indexOf('kd=1')>=0||(document.referrer||'').indexOf('" + origin + "')===0;",
+      "var backTo='" + origin + "/?saved='+encodeURIComponent(pageUrl);",
       "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:pageUrl,content:text,images:imgs})})",
       ".then(function(r){return r.json()})",
       ".then(function(d){",
       "if(!d.ok){alert('失败：'+((d.error&&d.error.message)||'未知错误'));return;}",
-      "if(fromStation){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){location.href='" + origin + "/?saved='+encodeURIComponent(location.href.split('#')[0]);}},400);}",
-      "else{alert('✓ 已进入知识蒸馏站（'+text.length+' 字）');}",
+      "if(fromStation){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){location.href=backTo;}},400);}",
+      "else if(confirm('已保存到知识蒸馏站（'+text.length+' 字）。要回站里读这篇吗？')){location.href=backTo;}",
+      "else{alert('✓ 已保存（'+text.length+' 字）');}",
       "});",
       "})();",
     ].join("");
