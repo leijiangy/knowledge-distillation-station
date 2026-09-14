@@ -575,7 +575,10 @@
           });
         });
         container.querySelectorAll(".kd-img").forEach((el) => {
-          el.addEventListener("click", () => explainFigure(el));
+          el.addEventListener("click", (event) => {
+            event.stopPropagation();   // 配图位于共享标记内时，只打开图片解释
+            explainFigure(el);
+          });
         });
       }
 
