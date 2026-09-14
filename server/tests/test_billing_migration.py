@@ -113,3 +113,10 @@ def test_migration_does_not_mix_rowtype_and_scalar_into_targets():
         assert not re.search(
             rf"\binto\s+[^;\n,]+\s*,\s*{variable}\b", sql, re.IGNORECASE
         )
+
+
+def test_migration_parenthesizes_case_after_is_distinct_from():
+    """PL/pgSQL can parse a bare CASE here as a procedural CASE block."""
+    assert not re.search(
+        r"\bis\s+distinct\s+from\s+case\b", _sql(), re.IGNORECASE
+    )
