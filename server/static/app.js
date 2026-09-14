@@ -864,7 +864,7 @@
 
   function renderRecommendCards() {
     if (!els.recommendCards) return;
-    els.recommendCards.innerHTML = recommendItems.map(recommendCardHtml).join("");
+    els.recommendCards.innerHTML = recommendItems.map((item) => recommendCardHtml(item)).join("");
     bindCardActions(els.recommendCards);
   }
 
