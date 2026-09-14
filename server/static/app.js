@@ -57,7 +57,7 @@
   let distilledMap = {};      // 已保存内容索引：url(去参) -> {title, length, at}
 
   // ---- 保存书签（动态生成：写入当前站点域名；带 #kd=1 来源标记的页面蒸完自动跳回） ----
-  const BOOKMARKLET_VERSION = "v3（2026-09-14）";   // 书签逻辑一改就 +1：用户能确认自己装的是哪一版
+  const BOOKMARKLET_VERSION = "v4（2026-09-14）";   // 书签逻辑一改就 +1：用户能确认自己装的是哪一版
   function buildBookmarklet() {
     const origin = window.location.origin;
     return [
@@ -101,7 +101,8 @@
       "if(pos>=0&&pos<=text.length)imgs.push({url:p.url,pos:pos});",
       "}",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
-      "if(!confirm('保存这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
+      // 弹窗里带上书签版本号：点一下就能确认浏览器里跑的是哪一版（旧版没有 og:url 兜底）
+      "if(!confirm('保存这篇文章？（书签 " + BOOKMARKLET_VERSION + "）\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
       // 是否从站里来的：优先看 #kd=1 标记，其次看 referrer（从站里打开的新标签页带着我们的域名）。
       // 知乎点开大图（灯箱）会改写地址、把 #kd=1 抹掉——只认标记就会既不跳转、又把内容存到错键上
       "var fromStation=location.hash.indexOf('kd=1')>=0||(document.referrer||'').indexOf('" + origin + "')===0;",
@@ -124,7 +125,8 @@
     if (els.homeBookmarkletCode) els.homeBookmarkletCode.value = code;
     // 版本标签：书签代码是拖的那一刻生成的，页面没刷新就会拖到旧代码——有个版本号好确认
     const ver = $("bookmarklet-version");
-    if (ver) ver.textContent = "书签版本 " + BOOKMARKLET_VERSION + "（先刷新本页再拖，才会装上当前版本）";
+    if (ver) ver.textContent = "书签版本 " + BOOKMARKLET_VERSION
+      + " · 先刷新本页再拖；装好后可右键书签 →「编辑」，确认代码里含 og:url（没有就是旧版）";
   }
 
   // ---- 视图切换：首页 / 我的收藏 ----
