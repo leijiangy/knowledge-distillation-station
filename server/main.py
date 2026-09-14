@@ -76,10 +76,10 @@ async def health():
 
 @app.middleware("http")
 async def _no_cache_html(request: Request, call_next):
-    """HTML 页面不做强缓存：本地/线上更新后刷新即可拿到新版，避免旧页面困扰"""
+    """静态资源不做强缓存（HTML / CSS / JS）：更新后刷新即可拿到新版，避免旧页面、旧样式"""
     response = await call_next(request)
     path = request.url.path
-    if path == "/" or path.endswith(".html"):
+    if path == "/" or path.endswith((".html", ".css", ".js", ".mjs")):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 
