@@ -71,7 +71,10 @@ async def upsert(key: str, title: str, url: str, content: str, images: list, at:
 
 
 async def index() -> dict:
-    """已蒸馏索引：key -> {title, length, at, images, cover}"""
+    """已蒸馏索引：key -> {title, length, at, images, cover}
+
+    images 统一成纯 URL 列表（库里可能存的是 {url,pos} 对象，卡片只关心图本身）。
+    """
     _check_config()
     resp = await _get_client().get(
         f"{_REST}/distilled", params={"select": "key,title,length,images,at"}
@@ -79,15 +82,17 @@ async def index() -> dict:
     resp.raise_for_status()
     out = {}
     for row in resp.json():
-        imgs = row.get("images") or []
-        if isinstance(imgs, str):
-            imgs = []
+        raw = row.get("images") or []
+        if isinstance(raw, str):
+            raw = []
+        urls = [x.get("url") if isinstance(x, dict) else x for x in raw]
+        urls = [u for u in urls if isinstance(u, str) and u]
         out[row["key"]] = {
             "title": row.get("title") or "",
             "length": row.get("length") or 0,
             "at": row.get("at") or 0,
-            "images": imgs,
-            "cover": imgs[0] if imgs else None,
+            "images": urls,
+            "cover": urls[0] if urls else None,
         }
     return out
 

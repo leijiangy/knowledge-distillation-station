@@ -235,20 +235,27 @@ async def fetch_image_data_url(url: str) -> str:
     return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
 
 
-async def explain_image(title: str, summary: str, context_text: str, data_url: str) -> str:
-    """解释一张原文配图：说清它是什么、该看哪里，不替读者把正文推理讲完"""
+async def explain_image(title: str, summary: str, before: str, after: str,
+                        data_url: str) -> str:
+    """解释一张原文配图：结合它在原文中的上下文（图片插在这两段之间），说清它是什么、该看哪里"""
+    if before or after:
+        where = ("这张图在原文中的位置：下面是它的上文与下文，图片就插在这两段之间。\n"
+                 + (f"【上文结尾处】\n…{before}\n\n" if before else "")
+                 + (f"【下文开头处】\n{after}…\n\n" if after else ""))
+    else:
+        where = "（这张图在原文中的位置没有记录，只能依据标题与主旨理解）\n\n"
     prompt = (
         "用户正在逐段精读一篇文章，把文中的一张配图拿给你看。\n\n"
         f"文章标题：{title}\n"
-        f"全文主旨：{summary or '（未知）'}\n"
-        + (f"读者当前所在段落（这张图在文中的确切位置没有记录，仅供参考）：\n{context_text}\n\n"
-           if context_text else "\n")
+        f"全文主旨：{summary or '（未知）'}\n\n"
+        + where
         + "要求：\n"
-        "1. 先说这张图是什么：示意图 / 流程图 / 图表 / 截图 / 照片，以及它的主题\n"
+        "1. 结合上下文说清这张图是什么：示意图 / 流程图 / 图表 / 截图 / 照片，以及它在讲什么\n"
         "2. 再说该看哪里：关键元素、标注或坐标轴在表达什么；是图表就只描述趋势与量级，"
         "不替读者下结论\n"
-        "3. 不复述正文、不扩展到图外内容；不超过 200 字，平实的中文\n"
-        "4. 图太模糊或看不出内容时直接说明看不清，不要猜"
+        "3. 点明它与上下文的关系（例如它正好对应上文哪一句、展开或印证了什么）\n"
+        "4. 不复述正文、不扩展到图外内容；不超过 250 字，平实的中文\n"
+        "5. 图太模糊或看不出内容时直接说明看不清，不要猜"
     )
     return (await _chat([
         {"role": "system", "content": _VISION_SYSTEM},
@@ -256,7 +263,7 @@ async def explain_image(title: str, summary: str, context_text: str, data_url: s
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": {"url": data_url}},
         ]},
-    ], temperature=0.4, max_tokens=900, model=_VISION_MODEL)).strip()
+    ], temperature=0.4, max_tokens=1100, model=_VISION_MODEL)).strip()
 
 
 async def explain_segment(title: str, summary: str, segment_text: str,

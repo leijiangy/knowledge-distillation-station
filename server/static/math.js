@@ -292,15 +292,34 @@
     return cacheSet(htmlCache, key, html);
   }
 
+  /** 配图原子：图片不在原文里占字符（原文长度 0），所以位置就是它的插入点 */
+  function figHtml(fig) {
+    const pos = Number(fig.pos);
+    return '<span class="kd-img" data-src-start="' + pos + '" data-src-end="' + pos
+      + '" data-src-len="0" data-fig="' + esc(fig.url) + '" title="点击看这张图的解释">'
+      + '<img src="' + esc(fig.url) + '" alt="" loading="lazy" referrerpolicy="no-referrer">'
+      + "</span>";
+  }
+
   /**
    * 生成左栏/右栏的 HTML。
    * marks: [{start, end, kind, id}]（原文下标）；markWrapper(mark, innerHtml) 由页面提供，
    * 决定标记的 class 与 data 属性（页面还要给 .mk 绑点击事件）。
+   * images: [{url, pos}] 配图（pos 是原文里的字符位置；缺 pos 的不在这里渲染）。
    */
   function buildHtml(opts) {
     const text = String((opts && opts.text) != null ? opts.text : "");
     const wrap = (opts && opts.markWrapper) || ((m, inner) => inner);
     const spans = cachedSpans(text);
+
+    // 配图按位置归组：零长原子，落在哪个字符下标就插在哪里
+    const figsAt = new Map();
+    for (const fig of (opts && opts.images) || []) {
+      const pos = Number(fig && fig.pos);
+      if (!fig || !fig.url || !Number.isInteger(pos) || pos < 0 || pos > text.length) continue;
+      if (!figsAt.has(pos)) figsAt.set(pos, []);
+      figsAt.get(pos).push(fig);
+    }
 
     // 标记与公式相交时，向外扩到整条公式：公式是原子的，划到一半也按整条显示
     let marks = (opts && opts.marks) || [];
@@ -313,6 +332,7 @@
     const cuts = new Set([0, text.length]);
     spans.forEach((s) => { cuts.add(s.start); cuts.add(s.end); });
     marks.forEach((m) => { cuts.add(m.start); cuts.add(m.end); });
+    figsAt.forEach((_figs, pos) => { cuts.add(pos); });
     const points = [...cuts].filter((p) => p >= 0 && p <= text.length).sort((a, b) => a - b);
 
     let html = "";
@@ -323,13 +343,17 @@
       if (a >= b) continue;
       const span = spans.find((s) => s.start <= a && b <= s.end);
       // 公式只在它的第一段输出一次，后续片段留空（避免重复渲染）
-      const inner = span ? (a === span.start ? mathHtml(span) : "") : esc(text.slice(a, b));
+      let inner = span ? (a === span.start ? mathHtml(span) : "") : esc(text.slice(a, b));
+      // 配图必须放在该片段文字之前（它的下标指向字符之间的位置），否则会跑到段落末尾
+      if (figsAt.has(a)) inner = figsAt.get(a).map(figHtml).join("") + (inner || "");
       if (!inner) continue;
       // 同一时间只可能命中一个标记（标记之间互不重叠）
       while (markCursor < marks.length && marks[markCursor].end <= a) markCursor++;
       const mark = marks[markCursor] && marks[markCursor].start <= a ? marks[markCursor] : null;
       html += mark ? wrap(mark, inner) : inner;
     }
+    // 落在文末的配图（那个位置之后没有片段，循环里不会输出）
+    if (figsAt.has(text.length)) html += figsAt.get(text.length).map(figHtml).join("");
     return html;
   }
 

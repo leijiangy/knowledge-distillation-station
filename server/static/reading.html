@@ -87,7 +87,19 @@
       border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.6);
       user-select: text; overflow-anchor: none;   /* 关闭滚动锚定：重渲染时滚动位置由代码控制 */
     }
-    /* 原文配图：文章级，放在左栏文本下方（原文里图片的字符位置没有记录，所以不做内联） */
+    /* 内联配图：按抓取时记录的位置插回正文（图片不占原文的字符，是零长原子） */
+    .kd-img { display: block; margin: 10px 0; }
+    .kd-img img {
+      display: block; max-width: 100%; height: auto; cursor: pointer;
+      border: 1px solid var(--line); border-radius: 8px;
+    }
+    .kd-img:hover img { border-color: var(--green); }
+    .kd-img.active img { border-color: var(--green); box-shadow: 0 0 0 2px rgba(47,122,61,.18); }
+    .kd-img.busy img { opacity: .6; }
+    /* 配图被包在标记里时，外层下划线会横贯整行（图片是块级）——去掉它，用底色表示标记 */
+    .mk-shared:has(.kd-img), .mk-private:has(.kd-img) { border-bottom: 0; }
+
+    /* 位置缺失的配图（早期保存的文章）退回这里 */
     .rd-figs {
       flex: 0 0 auto; margin-top: 10px; padding: 8px 9px 9px;
       border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.6);
@@ -477,7 +489,7 @@
             // 通过字符位置判断：落在已有标记的区间内（含多行标记的行间空白）→ 打开该层
             const hit = marks.find((m) => off >= m.start && off < m.end);
             if (hit) { openExplainTab(hit.id); return; }
-            if (e.target.closest && e.target.closest(".mk")) return;   // 点在标记元素边缘
+            if (e.target.closest && e.target.closest(".mk, .kd-img")) return;   // 点在标记/配图上
             const text = scope === "explain" ? (tab.explain || "") : tab.text;
             const r = sentenceRangeAt(text, off);
             const free = freeRange(r, marks, off);
@@ -503,10 +515,11 @@
       }
 
       // ---------- 标记渲染 ----------
-      // 文本 → HTML：公式交给 KDM（识别 + KaTeX 渲染），标记按原文下标包在片段外层
-      function renderText(container, text, marks) {
+      // 文本 → HTML：公式交给 KDM（识别 + KaTeX 渲染），配图按记录的字符位置内联插入，
+      // 标记按原文下标包在片段外层
+      function renderText(container, text, marks, images) {
         container.innerHTML = KDM.buildHtml({
-          text, marks,
+          text, marks, images,
           markWrapper: (m, inner) => {
             const cls = m.kind === "explain" ? "mk-shared"
               : (m.kind === "draft" ? "mk-draft" : "mk-private");
@@ -521,6 +534,9 @@
             if (!id) return;
             openExplainTab(id);   // 实线（共享解释）与虚线（私有提问）统一：点击即进入该层
           });
+        });
+        container.querySelectorAll(".kd-img").forEach((el) => {
+          el.addEventListener("click", () => explainFigure(el));
         });
       }
 
@@ -616,7 +632,8 @@
           marksWithDraft.push({ id: 0, kind: "draft",
                                 start: state.draft.start, end: state.draft.end });
         }
-        renderText($("rd-text"), tab.text, marksWithDraft);
+        renderText($("rd-text"), tab.text, marksWithDraft,
+                   tab.isRoot ? ((state.seg && state.seg.images) || []) : []);
         const explainText = tab.explain || "（生成中或生成失败）";
         // 右栏标记：锚在本层内容上的子解释 / 子提问
         const curNode = tab.nodeId ? findNode(tab.nodeId) : null;
@@ -690,39 +707,40 @@
         return (state.segNodes || []).find((n) => n.id === id);
       }
 
-      // ---------- 原文配图（文章级）：点一张 → 右栏给这张图的解释 ----------
+      // ---------- 原文配图：内联在正文原位置；位置缺失的（早期保存的文章）退回下方配图栏 ----------
       function renderFigs() {
         const box = $("rd-figs");
         if (!box) return;
-        const imgs = (state.article && state.article.images) || [];
-        if (!imgs.length) { box.hidden = true; box.innerHTML = ""; return; }
+        const all = (state.article && state.article.images) || [];
+        const rest = all.map((x) => (typeof x === "string" ? { url: x, pos: null } : x))
+          .filter((x) => x && x.url && x.pos == null);
+        if (!rest.length) { box.hidden = true; box.innerHTML = ""; return; }
         box.hidden = false;
         // referrerpolicy：知乎图床有防盗链，卡片那边也是这么处理的
-        box.innerHTML = '<div class="rd-figs-head">原文配图 ' + imgs.length + " 张 · 点击看解释</div>"
-          + '<div class="rd-figs-row">' + imgs.map((u) =>
-            '<button type="button" class="rd-fig" data-fig="' + esc(u) + '" title="解释这张图">'
-            + '<img src="' + esc(u) + '" alt="" loading="lazy" referrerpolicy="no-referrer"></button>'
+        box.innerHTML = '<div class="rd-figs-head">未定位配图 ' + rest.length + " 张 · 点击看解释</div>"
+          + '<div class="rd-figs-row">' + rest.map((f) =>
+            '<button type="button" class="rd-fig" data-fig="' + esc(f.url) + '" title="解释这张图">'
+            + '<img src="' + esc(f.url) + '" alt="" loading="lazy" referrerpolicy="no-referrer"></button>'
           ).join("") + "</div>";
       }
 
-      async function explainFigure(btn) {
-        const image = btn.getAttribute("data-fig") || "";
+      // 说明一张图：上下文由服务端按抓取时记录的位置取（图片就插在上下文两段之间）
+      async function explainFigure(el) {
+        const image = el.getAttribute("data-fig") || "";
         if (!image || !state.url) return;
-        const box = $("rd-figs");
-        if (box) box.querySelectorAll(".rd-fig").forEach((b) => b.classList.toggle("active", b === btn));
+        document.querySelectorAll(".kd-img, .rd-fig").forEach((b) => b.classList.toggle("active", b === el));
         showAnswer("这张图说明了什么？", "正在看图……", null);
-        btn.classList.add("busy");
+        el.classList.add("busy");
         try {
           const data = await api("/api/reading/image", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: state.url, image,
-                                   context: (state.seg && state.seg.text) || "" }),
+            body: JSON.stringify({ url: state.url, image }),
           });
           KDM.renderMathInto($("rd-answer-body"), data.explain || "（没有拿到解释）");
         } catch (err) {
           KDM.renderMathInto($("rd-answer-body"), "解释失败：" + err.message);
         } finally {
-          btn.classList.remove("busy");
+          el.classList.remove("busy");
         }
       }
 
