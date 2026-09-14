@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """配图地址白名单及带图文章保存：图片 URL 不能覆盖文章键"""
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -56,20 +57,25 @@ def test_ingest_images_keep_article_url_as_storage_key(monkeypatch):
     ]
     for images in cases:
         get = AsyncMock(return_value=None)
-        upsert = AsyncMock()
+        begin = AsyncMock(return_value={"id": "00000000-0000-4000-8000-000000000099",
+                                        "state": "queued"})
+        monkeypatch.setattr(main, "require_account", lambda _request: ("42", None))
+        monkeypatch.setattr(main, "_content_repo", object())
         monkeypatch.setattr(main.store, "get", get)
-        monkeypatch.setattr(main.store, "upsert", upsert)
-        monkeypatch.setattr(main.store, "count", AsyncMock(return_value=1))
-        request = SimpleNamespace(json=AsyncMock(return_value={
+        monkeypatch.setattr(main.store, "begin_content_update", begin)
+        request = SimpleNamespace(headers={}, json=AsyncMock(return_value={
             "url": article_url,
             "title": "带图文章",
             "content": "这是用于验证文章地址不会被配图地址覆盖的正文。" * 10,
             "images": images,
+            "expected_current_commit": None,
+            "idempotency_key": "00000000-0000-4000-8000-000000000001",
         }))
 
         result = asyncio.run(main.ingest(request))
+        payload = json.loads(result.body)
 
-        assert result["ok"] is True
+        assert payload["ok"] is True
         assert get.await_args.args == (article_url,)
-        assert upsert.await_args.args[0] == article_url
-        assert upsert.await_args.args[2] == article_url
+        assert begin.await_args.kwargs["article_key"] == article_url
+        assert begin.await_args.kwargs["candidate_json"]["source"]["url"] == article_url

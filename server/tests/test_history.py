@@ -16,6 +16,13 @@ def test_latest_open_wins_for_segment():
     assert collapse_history(rows) == [{"article_key": "a", "seg_index": 7, "at": 300}]
 
 
+def test_latest_open_keeps_version_and_segment_identity():
+    row = {"article_key": "a", "at": 300, "seg_index": 7,
+           "git_commit": "a" * 40,
+           "segment_id": "00000000-0000-4000-8000-000000000007"}
+    assert collapse_history([row]) == [row]
+
+
 def test_sorted_by_recency():
     rows = [rec("a", 100), rec("b", 300), rec("c", 200)]
     assert [r["article_key"] for r in collapse_history(rows)] == ["b", "c", "a"]

@@ -50,6 +50,16 @@ class Settings:
 
     # AI 能力
     DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+    DSH_MODEL = os.environ.get("DSH_MODEL", "deepseek-flash")
+
+    # 内容版本与积分计费。真实收费/充值默认关闭；缺少经过核验的参数时不得开启。
+    CONTENT_GIT_DIR = os.environ.get("CONTENT_GIT_DIR", "")
+    BILLING_ENABLED = os.environ.get("BILLING_ENABLED") == "1"
+    RECHARGE_ENABLED = os.environ.get("RECHARGE_ENABLED") == "1"
+    RECHARGE_CREDITS_PER_CNY = os.environ.get("RECHARGE_CREDITS_PER_CNY", "")
+    MODEL_TOKENIZER_DIR = os.environ.get("MODEL_TOKENIZER_DIR", "")
+    RECHARGE_PLANS_JSON = os.environ.get("RECHARGE_PLANS_JSON", "")
+    CLOUDBASE_PAY_FUNCTION = os.environ.get("CLOUDBASE_PAY_FUNCTION", "")
 
     # 服务
     HOST = os.environ.get("HOST", "127.0.0.1")

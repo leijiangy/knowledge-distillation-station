@@ -3,7 +3,7 @@
 
 五张表：
 - reading_articles：article_key -> {summary, cuts, by_uid, at}（全局共享：划分 + 主旨）
-- reading_nodes：节点树。kind: init（初始解释，每段唯一）/ explain（共享选区解释）/ ask（私有提问）
+- reading_nodes：账号私有节点树。kind: init（本人初始解释，每段唯一）/ explain（本人选区解释）/ ask（本人提问）
 - reading_events：埋点（open / understood / deleted，只追加）
 - reading_quizzes：自测题目与概括，按内容键全局共享（一人生成、全站复用）
 - reading_quiz_attempts：作答记录，按用户私有（只追加，折叠取每题最新）
@@ -11,14 +11,16 @@
 import json
 import time
 
-from .store import _REST, _check_config, _get_client
+from .store import _REST, _check_config, _get_client, rpc
 
 
-async def get_article(article_key: str) -> dict | None:
+async def get_article(article_key: str, git_commit: str | None = None) -> dict | None:
     _check_config()
     resp = await _get_client().get(
         f"{_REST}/reading_articles",
-        params={"article_key": f"eq.{article_key}", "limit": 1},
+        params={"article_key": f"eq.{article_key}",
+                **({"git_commit": f"eq.{git_commit}"} if git_commit else {}),
+                "limit": 1},
     )
     resp.raise_for_status()
     rows = resp.json()
@@ -37,30 +39,67 @@ async def save_article(article_key: str, summary: str, cuts: list, by_uid: str) 
     resp.raise_for_status()
 
 
-async def get_init(article_key: str, seg_index: int) -> dict | None:
+async def get_init(article_key: str, seg_index: int, uid: str) -> dict | None:
     _check_config()
     resp = await _get_client().get(
         f"{_REST}/reading_nodes",
         params={"article_key": f"eq.{article_key}", "seg_index": f"eq.{seg_index}",
-                "kind": "eq.init", "limit": 1},
+                "kind": "eq.init", "uid": f"eq.{uid}", "limit": 1},
     )
     resp.raise_for_status()
     rows = resp.json()
     return rows[0] if rows else None
 
 
-async def list_segment_nodes(article_key: str, seg_index: int, uid: str) -> list:
-    """某段的可见节点：共享的 init/explain + 自己的 ask（含嵌套子树，按 id 升序）"""
+async def list_segment_nodes(article_key: str, seg_index: int, uid: str,
+                             *, segment_id: str | None = None,
+                             include_history: bool = False) -> list:
+    """某段的本人节点（含嵌套子树，按 id 升序）。"""
     _check_config()
+    if segment_id is not None:
+        data = await rpc("list_private_segment_nodes", {
+            "actor_uid": uid,
+            "p_article_key": article_key,
+            "p_segment_id": segment_id,
+            "p_include_history": bool(include_history),
+        })
+        return data if isinstance(data, list) else ([] if data is None else [data])
     params = {
         "article_key": f"eq.{article_key}",
         "seg_index": f"eq.{seg_index}",
-        "or": f"(kind.in.(init,explain),and(kind.eq.ask,uid.eq.{uid}))",
+        "uid": f"eq.{uid}",
         "order": "id.asc",
     }
     resp = await _get_client().get(f"{_REST}/reading_nodes", params=params)
     resp.raise_for_status()
     return resp.json()
+
+
+async def get_private_node(node_id: int, uid: str, article_key: str,
+                           segment_id: str, *, include_history: bool = False) -> dict | None:
+    data = await rpc("get_private_node", {
+        "actor_uid": uid,
+        "p_node_id": node_id,
+        "p_article_key": article_key,
+        "p_segment_id": segment_id,
+        "p_include_history": bool(include_history),
+    })
+    if isinstance(data, list):
+        return data[0] if data else None
+    return data if isinstance(data, dict) and data else None
+
+
+async def soft_delete_private_tree(node_id: int, uid: str, article_key: str,
+                                   segment_id: str) -> int:
+    data = await rpc("delete_private_node_tree", {
+        "actor_uid": uid,
+        "p_node_id": node_id,
+        "p_article_key": article_key,
+        "p_segment_id": segment_id,
+    })
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    return int((data or {}).get("deleted_count") or 0)
 
 
 async def create_node(article_key: str, seg_index: int, kind: str, content: str, uid: str,
@@ -81,7 +120,7 @@ async def create_node(article_key: str, seg_index: int, kind: str, content: str,
     )
     if resp.status_code == 409:
         if kind == "init":
-            return await get_init(article_key, seg_index)
+            return await get_init(article_key, seg_index, uid)
         return None
     resp.raise_for_status()
     rows = resp.json()
@@ -89,14 +128,15 @@ async def create_node(article_key: str, seg_index: int, kind: str, content: str,
 
 
 async def find_overlap(article_key: str, seg_index: int, pos_start: int, pos_end: int,
-                       parent_id: int | None = None) -> list:
-    """与给定区间重叠的**同层**共享解释。
+                       uid: str, parent_id: int | None = None) -> list:
+    """与给定区间重叠的本人同层解释。
 
     不重叠约束作用于同一父层之内；父子之间允许嵌套（在某一层里再划选生成子层）。
     """
     _check_config()
     params = {
         "article_key": f"eq.{article_key}", "seg_index": f"eq.{seg_index}",
+        "uid": f"eq.{uid}",
         "kind": "eq.explain",
         "pos_start": f"lt.{pos_end}", "pos_end": f"gt.{pos_start}",
         "select": "id,pos_start,pos_end",
@@ -107,17 +147,18 @@ async def find_overlap(article_key: str, seg_index: int, pos_start: int, pos_end
     return resp.json()
 
 
-async def get_node(node_id: int) -> dict | None:
+async def get_node(node_id: int, uid: str) -> dict | None:
     _check_config()
     resp = await _get_client().get(
-        f"{_REST}/reading_nodes", params={"id": f"eq.{node_id}", "limit": 1})
+        f"{_REST}/reading_nodes",
+        params={"id": f"eq.{node_id}", "uid": f"eq.{uid}", "limit": 1})
     resp.raise_for_status()
     rows = resp.json()
     return rows[0] if rows else None
 
 
-async def delete_node_tree(node_id: int) -> int:
-    """删除节点及其全部子孙（递归收集后一次删除），返回删除数量。"""
+async def delete_node_tree(node_id: int, uid: str) -> int:
+    """删除本人的节点及其子孙；不会沿修订关系扩散。"""
     _check_config()
     ids = [node_id]
     frontier = [node_id]
@@ -125,7 +166,8 @@ async def delete_node_tree(node_id: int) -> int:
         parent_list = ",".join(str(i) for i in frontier)
         resp = await _get_client().get(
             f"{_REST}/reading_nodes",
-            params={"parent_id": f"in.({parent_list})", "select": "id"},
+            params={"parent_id": f"in.({parent_list})", "uid": f"eq.{uid}",
+                    "select": "id"},
         )
         resp.raise_for_status()
         children = [row["id"] for row in resp.json()]
@@ -134,18 +176,28 @@ async def delete_node_tree(node_id: int) -> int:
         ids.extend(children)
         frontier = children
     id_list = ",".join(str(i) for i in ids)
-    resp = await _get_client().delete(f"{_REST}/reading_nodes", params={"id": f"in.({id_list})"})
+    resp = await _get_client().delete(
+        f"{_REST}/reading_nodes",
+        params={"id": f"in.({id_list})", "uid": f"eq.{uid}"},
+    )
     resp.raise_for_status()
     return len(ids)
 
 
 async def append_event(article_key: str, uid: str, event: str,
-                       seg_index: int | None = None, node_id: int | None = None) -> None:
+                       seg_index: int | None = None, node_id: int | None = None,
+                       *, git_commit: str | None = None,
+                       segment_id: str | None = None) -> None:
     _check_config()
+    body = {"article_key": article_key, "uid": uid, "event": event,
+            "seg_index": seg_index, "node_id": node_id, "at": int(time.time())}
+    if git_commit is not None:
+        body["git_commit"] = git_commit
+    if segment_id is not None:
+        body["segment_id"] = segment_id
     resp = await _get_client().post(
         f"{_REST}/reading_events",
-        json={"article_key": article_key, "uid": uid, "event": event,
-              "seg_index": seg_index, "node_id": node_id, "at": int(time.time())},
+        json=body,
     )
     resp.raise_for_status()
 
@@ -160,9 +212,17 @@ def collapse_history(rows: list) -> list:
         at = row.get("at") or 0
         cur = latest.get(key)
         if cur is None or at > cur["at"]:
-            latest[key] = {"at": at, "seg_index": row.get("seg_index") or 0}
-    out = [{"article_key": key, "seg_index": v["seg_index"], "at": v["at"]}
-           for key, v in latest.items()]
+            latest[key] = {"at": at, "seg_index": row.get("seg_index") or 0,
+                           "git_commit": row.get("git_commit"),
+                           "segment_id": row.get("segment_id")}
+    out = []
+    for key, value in latest.items():
+        item = {"article_key": key, "seg_index": value["seg_index"], "at": value["at"]}
+        if value["git_commit"] is not None:
+            item["git_commit"] = value["git_commit"]
+        if value["segment_id"] is not None:
+            item["segment_id"] = value["segment_id"]
+        out.append(item)
     out.sort(key=lambda r: r["at"], reverse=True)
     return out
 
@@ -172,7 +232,7 @@ async def list_recent_opened(uid: str, limit: int = 200) -> list:
     _check_config()
     resp = await _get_client().get(
         f"{_REST}/reading_events",
-        params={"select": "article_key,seg_index,at", "uid": f"eq.{uid}",
+        params={"select": "article_key,git_commit,segment_id,seg_index,at", "uid": f"eq.{uid}",
                 "event": "eq.open", "order": "at.desc", "limit": str(limit)},
     )
     resp.raise_for_status()

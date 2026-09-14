@@ -3,6 +3,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# 内容版本使用系统 Git 的公开对象/引用接口；ca-certificates 保证外部 API TLS 链完整。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # 先装依赖（利用构建缓存）
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

@@ -1,27 +1,78 @@
 # -*- coding: utf-8 -*-
 """知识蒸馏站 —— FastAPI 应用入口与路由（对照官方 Node 模板的接口形态）"""
 import asyncio
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 import re
 import time
 from pathlib import Path
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from core.config import settings
 from core.sessions import sessions
 from core.cache import content_cache, user_cache, user_key
-from core import ai, analyze, oauth, reading_store, segments, store, zhihu
+from core import ai, advanced, analyze, billing, content_versions, oauth, reading_store, segments, store, zhihu
 
-app = FastAPI(title=settings.PROJECT_NAME, docs_url=None, redoc_url=None)
+_content_repo: content_versions.BareContentRepository | None = None
+_content_worker_task: asyncio.Task | None = None
+_billing_worker_task: asyncio.Task | None = None
+_billing_inflight: set[asyncio.Task] = set()
 
-# 书签小工具从 zhihu.com 页面跨域 POST 内容进来，需要放行 CORS
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    global _content_repo, _content_worker_task, _billing_worker_task
+    try:
+        await store.init()
+    except Exception as exc:
+        print(f"[store] 持久化层初始化失败：{exc}")
+    if settings.CONTENT_GIT_DIR:
+        try:
+            _content_repo = content_versions.BareContentRepository(settings.CONTENT_GIT_DIR)
+            _content_repo.initialize()
+            _content_worker_task = asyncio.create_task(_content_worker_loop())
+        except Exception as exc:
+            _content_repo = None
+            print(f"[content] Git版本存储初始化失败：{exc}")
+    if settings.BILLING_ENABLED:
+        _billing_worker_task = asyncio.create_task(_billing_worker_loop())
+    try:
+        yield
+    finally:
+        if _content_worker_task is not None:
+            _content_worker_task.cancel()
+            try:
+                await _content_worker_task
+            except asyncio.CancelledError:
+                pass
+            _content_worker_task = None
+        if _billing_worker_task is not None:
+            _billing_worker_task.cancel()
+            try:
+                await _billing_worker_task
+            except asyncio.CancelledError:
+                pass
+            _billing_worker_task = None
+        if _billing_inflight:
+            await asyncio.gather(*tuple(_billing_inflight), return_exceptions=True)
+        await store.close()
+
+
+app = FastAPI(title=settings.PROJECT_NAME, docs_url=None, redoc_url=None,
+              lifespan=_lifespan)
+
+# 旧书签仅需要拿到升级错误；新导入通过本站弹窗和同源 Cookie 完成。
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_origins=["https://www.zhihu.com", "https://zhuanlan.zhihu.com"],
+    allow_methods=["POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
 
@@ -56,6 +107,28 @@ def _user_key_id(session) -> str:
     return str((session.profile or {}).get("uid") or "anon") if session else "self"
 
 
+def require_account(request: Request):
+    """Return a real Zhihu uid for private data, publishing and money flows."""
+    session = _current_session(request)
+    if session is None or not session.token:
+        return None, {"code": "LOGIN_REQUIRED", "message": "请先登录知乎账号。"}
+    if session.expires_at is not None and session.expires_at <= time.time():
+        session.token = None
+        session.profile = None
+        return None, {"code": "SESSION_EXPIRED", "message": "授权已过期，请重新连接。"}
+    uid = oauth.profile_uid(session.profile)
+    if uid is None:
+        return None, {"code": "ACCOUNT_ID_REQUIRED", "message": "账号缺少有效知乎 uid，请重新授权。"}
+    return uid, None
+
+
+def api_error(code: str, message: str, status: int, **details):
+    error = {"code": code, "message": message}
+    if details:
+        error["details"] = details
+    return JSONResponse({"ok": False, "error": error}, status_code=status)
+
+
 def _resolve_token(session):
     """返回 (oauth_token, error)。
 
@@ -81,6 +154,8 @@ async def _no_cache_html(request: Request, call_next):
     path = request.url.path
     if path == "/" or path.endswith((".html", ".css", ".js", ".mjs")):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    elif path.startswith(("/api/reading", "/api/billing", "/api/ingest")):
+        response.headers["Cache-Control"] = "private, no-store"
     return response
 
 
@@ -148,8 +223,9 @@ async def auth_callback(request: Request):
         session.error = None
         try:
             session.profile = await oauth.fetch_profile(session.token)
-        except oauth.ZhihuError:
-            session.profile = None  # 资料获取失败不阻断登录
+        except oauth.ZhihuError as exc:
+            session.profile = None  # 收藏读取仍可用；私人功能会要求重新授权取得 uid
+            session.error = {"code": str(exc.code), "message": exc.message}
         redirect = RedirectResponse(session.next_path or "/?oauth=success", status_code=302)
         session.next_path = None
         _attach_cookie(redirect, session)
@@ -318,17 +394,185 @@ def _norm_key(url: str) -> str:
     if match:
         return f"https://www.zhihu.com/answer/{match.group(1)}"
     return s
-@app.on_event("startup")
-async def _startup():
+
+
+def _canonical_uuid(value, name: str) -> str:
     try:
-        await store.init()
-    except Exception as exc:  # 配置缺失/网络不通时给出明确告警，但不阻塞其他功能
-        print(f"[store] 持久化层初始化失败：{exc}")
+        return str(UUID(str(value)))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ValueError(f"{name}必须是UUID") from exc
+
+
+async def _process_content_update(job: dict, executor_token: str) -> None:
+    if _content_repo is None:
+        raise content_versions.GitStorageError("VERSION_STORAGE_UNAVAILABLE")
+    update_id = str(job["id"])
+    expected = job.get("expected_commit")
+    candidate = job.get("candidate_json") or {}
+    if isinstance(candidate, str):
+        candidate = json.loads(candidate)
+
+    if job.get("state") == "git_saved" and job.get("candidate_commit"):
+        published = await store.publish_content_update(update_id, executor_token)
+        if published.get("state") == "published":
+            try:
+                _content_repo.update_branch(
+                    str(job["article_key"]), str(job["candidate_commit"]), expected
+                )
+            except content_versions.GitRefConflict:
+                pass
+        return
+
+    if "manifest" not in candidate or "summary" not in candidate:
+        source = candidate.get("source") or candidate
+        content = str(source.get("content") or "")
+        result = await ai.segment_article(str(source.get("title") or ""), content)
+        cuts = ai.normalize_cuts(result.get("cuts"), len(content))
+        summary = str(result.get("summary") or "")
+        histories: list[content_versions.HistoricalVersion] = []
+        if expected:
+            old = _content_repo.read_version(str(expected))
+            parent = old.parent
+            while parent and len(histories) < 100:
+                historical = _content_repo.read_version(parent)
+                histories.append(content_versions.HistoricalVersion(
+                    historical.content, historical.manifest
+                ))
+                parent = historical.parent
+            manifest = content_versions.inherit_manifest(
+                old.content, old.manifest, content, cuts,
+                historical_versions=histories,
+                block_provider=_content_repo.git_unchanged_blocks,
+            )
+        else:
+            manifest = content_versions.build_manifest(content, cuts)
+        candidate = {
+            "source": source,
+            "summary": summary,
+            "cuts": cuts,
+            "manifest": manifest,
+            "manifest_sha256": content_versions.manifest_sha256(manifest),
+            "committed_at": job.get("created_at") or datetime.now(timezone.utc).isoformat(),
+        }
+        await store.save_content_candidate(update_id, executor_token, candidate)
+
+    source = candidate["source"]
+    commit = _content_repo.create_version(
+        article_key=str(job["article_key"]),
+        update_id=update_id,
+        content=str(source["content"]),
+        meta={
+            "schema_version": 1,
+            "article_key": str(job["article_key"]),
+            "url": str(source["url"]),
+            "title": str(source["title"]),
+            "images": source.get("images") or [],
+            "summary": str(candidate["summary"]),
+            "update_id": update_id,
+        },
+        manifest=candidate["manifest"],
+        parent=str(expected) if expected else None,
+        committed_at=str(candidate["committed_at"]),
+    )
+    await store.mark_content_git_saved(update_id, executor_token, commit)
+    published = await store.publish_content_update(update_id, executor_token)
+    if published.get("state") == "published":
+        try:
+            _content_repo.update_branch(str(job["article_key"]), commit, expected)
+        except content_versions.GitRefConflict:
+            pass
+
+
+async def _content_worker_loop() -> None:
+    while True:
+        executor_token = str(uuid4())
+        try:
+            job = await store.claim_content_update(executor_token)
+            if job is None:
+                await asyncio.sleep(1)
+                continue
+            try:
+                await _process_content_update(job, executor_token)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[content] 更新任务失败：{exc}")
+                try:
+                    await store.fail_content_update(
+                        str(job["id"]), executor_token, type(exc).__name__[:80]
+                    )
+                except Exception as save_exc:
+                    print(f"[content] 记录任务失败状态失败：{save_exc}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[content] 领取更新任务失败：{exc}")
+            await asyncio.sleep(30)
+
+
+async def _run_billing_operation(job: dict) -> None:
+    operation_id = str(job["id"])
+    executor_token = str(job["executor_token"])
+    try:
+        if job.get("status") == billing.OperationStatus.RESULT_RECORDED.value:
+            await billing.finalize_operation(operation_id)
+            return
+        prepared = job.get("messages_json") or {}
+        if isinstance(prepared, str):
+            prepared = json.loads(prepared)
+        if job.get("action") == "advanced":
+            if prepared.get("executor") != "dsh":
+                raise ai.AIError("高级解释执行器不匹配。")
+            result = await advanced.execute(prepared)
+        else:
+            result = await ai.execute_chat(prepared)
+        await billing.record_result(operation_id, executor_token, result)
+        await billing.finalize_operation(operation_id)
+    except billing.BillingContractError as exc:
+        await billing.waive_operation(operation_id, exc.code)
+    except ai.AIError:
+        await billing.waive_operation(operation_id, "AI_FAILED")
+    except Exception as exc:
+        print(f"[billing] 操作恢复等待：{operation_id} {exc}")
+
+
+async def _billing_worker_loop() -> None:
+    while True:
+        try:
+            _billing_inflight.difference_update(
+                task for task in _billing_inflight if task.done()
+            )
+            if len(_billing_inflight) >= 4:
+                await asyncio.sleep(0.1)
+                continue
+            executor_token = str(uuid4())
+            job = await billing.claim_operation(executor_token)
+            if job is None:
+                await asyncio.sleep(1)
+                continue
+            task = asyncio.create_task(_run_billing_operation(job))
+            _billing_inflight.add(task)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[billing] 领取操作失败：{exc}")
+            await asyncio.sleep(30)
 
 
 @app.post("/api/ingest")
 async def ingest(request: Request):
-    """接收书签小工具从知乎页面送来的全文（用户在知乎页面主动确认后触发）"""
+    """预览或创建一个异步内容版本更新任务。"""
+    if request.headers.get("origin") in {
+        "https://www.zhihu.com", "https://zhuanlan.zhihu.com"
+    }:
+        return api_error(
+            "BOOKMARKLET_UPDATE_REQUIRED",
+            "书签工具已升级，请从本站重新复制后再保存文章。",
+            410,
+        )
+    uid, account_error = require_account(request)
+    if account_error:
+        return api_error(account_error["code"], account_error["message"], 401)
     try:
         body = await request.json()
     except Exception:
@@ -364,13 +608,77 @@ async def ingest(request: Request):
             clean_images.append({"url": image_url, "pos": pos})
     key = _norm_key(url)
     existing = await store.get(key)
-    if existing is not None:
-        # 内容不随重复蒸馏变化（学习会话的位置锚定依赖全文稳定）：已存在直接返回
-        return {"ok": True, "existed": True, "length": len(existing["content"]),
-                "images": len(existing.get("images") or []), "total": await store.count()}
-    await store.upsert(key, title, url, content, clean_images)
-    return {"ok": True, "length": len(content), "images": len(clean_images),
-            "total": await store.count()}
+    if existing is not None and not existing.get("current_commit"):
+        return api_error(
+            "VERSION_MIGRATION_REQUIRED",
+            "这篇文章尚未建立版本基线，请先完成内容迁移。",
+            503,
+        )
+    current_commit = (existing or {}).get("current_commit")
+    unchanged = bool(existing and existing.get("title") == title
+                     and existing.get("url") == url
+                     and existing.get("content") == content
+                     and (existing.get("images") or []) == clean_images)
+    if body.get("preview_only") is True:
+        return {"ok": True, "current_commit": current_commit,
+                "unchanged": unchanged, "length": len(content),
+                "images": len(clean_images)}
+    if _content_repo is None:
+        return api_error(
+            "VERSION_STORAGE_UNAVAILABLE", "内容版本存储尚未配置。", 503
+        )
+    if unchanged:
+        return {"ok": True, "unchanged": True, "commit": current_commit,
+                "length": len(content), "images": len(clean_images)}
+    if "expected_current_commit" not in body:
+        return api_error("INVALID_INPUT", "缺少expected_current_commit。", 422)
+    expected = body.get("expected_current_commit")
+    if expected is not None:
+        expected = str(expected)
+    if expected != current_commit:
+        return api_error(
+            "VERSION_CONFLICT", "文章版本已变化，请重新预览。", 409,
+            latest_commit=current_commit,
+        )
+    try:
+        idempotency_key = _canonical_uuid(body.get("idempotency_key"), "idempotency_key")
+    except ValueError as exc:
+        return api_error("INVALID_INPUT", str(exc), 422)
+    update_id = str(uuid4())
+    source = {"url": url, "title": title, "content": content, "images": clean_images}
+    request_hash = billing.stable_json_hash({
+        "article_key": key, "expected_commit": expected, "source": source
+    })
+    try:
+        task = await store.begin_content_update(
+            uid=uid, update_id=update_id, idempotency_key=idempotency_key,
+            article_key=key, expected_commit=expected, request_hash=request_hash,
+            candidate_json={"source": source},
+        )
+    except Exception as exc:
+        print(f"[content] 创建更新任务失败：{exc}")
+        return api_error("DEPENDENCY_UNAVAILABLE", "暂时无法创建内容更新任务。", 503)
+    return JSONResponse({"ok": True, "update_id": task.get("id", update_id),
+                         "state": task.get("state", "queued")}, status_code=202)
+
+
+@app.get("/api/ingest/{update_id}")
+async def ingest_status(request: Request, update_id: str):
+    uid, account_error = require_account(request)
+    if account_error:
+        return api_error(account_error["code"], account_error["message"], 401)
+    try:
+        update_id = _canonical_uuid(update_id, "update_id")
+        task = await store.get_content_update(update_id, uid)
+    except ValueError as exc:
+        return api_error("INVALID_INPUT", str(exc), 422)
+    except Exception:
+        return api_error("DEPENDENCY_UNAVAILABLE", "暂时无法读取更新任务。", 503)
+    if task is None:
+        return api_error("UPDATE_NOT_FOUND", "更新任务不存在。", 404)
+    return {"ok": True, "update_id": task["id"], "state": task["state"],
+            "commit": task.get("candidate_commit") if task["state"] == "published" else None,
+            "error_code": task.get("error_code")}
 
 
 @app.get("/api/distilled")
@@ -381,35 +689,47 @@ async def distilled_index():
 
 @app.delete("/api/distilled")
 async def delete_distilled(request: Request, url: str):
-    """「更新文章」前置：清空某篇已保存的全文与学习数据（之后用书签重新保存即可覆盖）"""
-    session = _current_session(request)
-    _token, login_error = _resolve_token(session)
-    if login_error:
-        return {"ok": False, "error": login_error}
-    key = _norm_key(url)
-    item = await store.get(key)
-    if not item:
-        return {"ok": False, "error": {"code": "NOT_FOUND", "message": "这篇还没有保存过全文。"}}
-    try:
-        await store.delete(key)
-        # 旧段落划分与位置标记失去参照，必须一起清（否则重新保存后会锚到错的文字上）
-        await reading_store.delete_plan_and_nodes(key)
-        await reading_store.delete_user_events(key, _user_key_id(session))
-    except Exception:
-        return {"ok": False, "error": {"code": "DB_FAILED", "message": "清空失败，请稍后再试。"}}
-    return {"ok": True}
+    """旧更新协议已停用；更新必须创建新版本，不能删除共享资产。"""
+    _uid, account_error = require_account(request)
+    if account_error:
+        return api_error(account_error["code"], account_error["message"], 401)
+    return api_error(
+        "ARTICLE_UPDATE_REQUIRES_IMPORT",
+        "更新文章请使用新版书签导入，它会保留旧版本和已有解释。",
+        410,
+    )
 
 
 @app.get("/api/distilled/content")
-async def distilled_content(url: str):
+async def distilled_content(url: str, version: str | None = None):
     """读取某篇已蒸馏文章的全文"""
     key = _norm_key(url)
     item = await store.get(key)
     if not item:
         return {"ok": False, "error": {"code": "NOT_FOUND", "message": "这篇还没有全文，试试书签工具。"}}
+    actual_commit = item.get("current_commit")
+    if version is not None:
+        if _content_repo is None:
+            return api_error("VERSION_STORAGE_UNAVAILABLE", "历史版本存储暂时不可用。", 503)
+        try:
+            row = await store.get_article_version(key, version)
+            if row is None:
+                return api_error("VERSION_NOT_FOUND", "文章版本不存在。", 404)
+            stored = _content_repo.read_version(version)
+        except content_versions.ContentVersionError:
+            return api_error("VERSION_NOT_FOUND", "文章版本不存在。", 404)
+        except Exception:
+            return api_error("VERSION_STORAGE_UNAVAILABLE", "历史版本存储暂时不可用。", 503)
+        if stored.meta.get("article_key") != key:
+            return api_error("VERSION_NOT_FOUND", "文章版本不存在。", 404)
+        return {"ok": True, "title": stored.meta["title"], "url": stored.meta["url"],
+                "content": stored.content, "images": stored.meta.get("images") or [],
+                "summary": stored.meta.get("summary") or "", "manifest": stored.manifest,
+                "length": len(stored.content), "version": stored.commit}
     return {"ok": True, "title": item["title"], "url": item["url"],
             "content": item["content"], "images": item["images"],
-            "length": len(item["content"]), "at": item["at"]}
+            "length": len(item["content"]), "at": item["at"],
+            "version": actual_commit}
 
 
 # ---- 智能推荐：基于收藏画像搜索同主题公共内容（v1） ----
@@ -570,42 +890,65 @@ async def search_content(request: Request, q: str = "", force: int = 0):
 
 
 # ---- 学习会话（逐段精读，设计见 docs/学习会话设计-定稿.md） ----
-async def _reading_context(request: Request, url: str):
+async def _reading_context(request: Request, url: str, version: str | None = None):
     """会话公共前置：登录校验 + 归一化 key + 取全文。返回 (item, key, uid, error)"""
-    session = _current_session(request)
-    _token, login_error = _resolve_token(session)
-    if login_error:
-        return None, None, None, login_error
+    uid, account_error = require_account(request)
+    if account_error:
+        return None, None, None, account_error
     key = _norm_key(url)
     item = await store.get(key)
     if not item:
         return None, key, None, {"code": "NOT_DISTILLED", "message": "这篇还没有全文，先用书签保存。"}
-    return item, key, _user_key_id(session), None
-
-
-async def _ensure_init_explain(item: dict, key: str, seg_index: int, seg_text: str,
-                               summary: str, uid: str):
-    """初始解释：有则取，无则生成（按段懒生成）"""
-    node = await reading_store.get_init(key, seg_index)
-    if node:
-        return node
-    try:
-        text = await ai.explain_segment(item["title"], summary, seg_text)
-    except ai.AIError:
-        return None
-    return await reading_store.create_node(key, seg_index, "init", text, uid)
+    requested = version or item.get("current_commit")
+    if requested is not None:
+        requested = str(requested)
+        if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", requested):
+            return None, key, None, {"code": "VERSION_NOT_FOUND", "message": "文章版本不存在。"}
+        try:
+            version_row = await store.get_article_version(key, requested)
+        except Exception:
+            return None, key, None, {"code": "DEPENDENCY_UNAVAILABLE", "message": "暂时无法读取文章版本。"}
+        if version_row is None:
+            return None, key, None, {"code": "VERSION_NOT_FOUND", "message": "文章版本不存在。"}
+        if requested != item.get("current_commit"):
+            if _content_repo is None:
+                return None, key, None, {"code": "VERSION_STORAGE_UNAVAILABLE", "message": "历史版本存储暂时不可用。"}
+            try:
+                stored = _content_repo.read_version(requested)
+            except Exception:
+                return None, key, None, {"code": "VERSION_STORAGE_UNAVAILABLE", "message": "历史版本存储暂时不可用。"}
+            if stored.meta.get("article_key") != key:
+                return None, key, None, {"code": "VERSION_NOT_FOUND", "message": "文章版本不存在。"}
+            item = {"key": key, "title": stored.meta["title"], "url": stored.meta["url"],
+                    "content": stored.content, "images": stored.meta.get("images") or [],
+                    "at": version_row.get("published_at") or 0,
+                    "current_commit": requested}
+        else:
+            item = dict(item)
+            item["current_commit"] = requested
+    return item, key, uid, None
 
 
 async def _segment_payload(item: dict, key: str, summary: str, cuts: list,
-                           index: int, uid: str):
+                           index: int, uid: str, segment_id: str | None = None):
     seg_text, total, seg_images = segments.segment_slice(
         item["content"], cuts, index, item.get("images"))
     if seg_text is None:
         return None, total
-    init_node = await _ensure_init_explain(item, key, index, seg_text, summary, uid)
-    nodes = await reading_store.list_segment_nodes(key, index, uid)
+    nodes = await reading_store.list_segment_nodes(
+        key, index, uid, segment_id=segment_id
+    )
+    nodes = [{**node,
+              "id": str(node["id"]) if node.get("id") is not None else None,
+              "parent_id": (str(node["parent_id"])
+                            if node.get("parent_id") is not None else None),
+              "supersedes_id": (str(node["supersedes_id"])
+                                if node.get("supersedes_id") is not None else None)}
+             for node in nodes]
+    init_node = next((node for node in nodes if node.get("kind") == "init"), None)
     return {
         "index": index,
+        "segment_id": segment_id,
         "total": total,
         "text": seg_text,
         "explain": (init_node or {}).get("content", ""),
@@ -633,17 +976,26 @@ def _author_from_collections(uid: str, key: str) -> dict | None:
 
 @app.post("/api/reading/open")
 async def reading_open(request: Request):
-    """打开阅读会话：无划分则生成划分与全文主旨，返回第 0 段"""
+    """打开固定文章版本；读取本身不生成解释。"""
     try:
         body = await request.json()
     except Exception:
         return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
-    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    item, key, uid, error = await _reading_context(
+        request, str(body.get("url") or ""), body.get("version")
+    )
     if error:
         return {"ok": False, "error": error}
     content = item["content"]
-    plan = await reading_store.get_article(key)
+    commit = item.get("current_commit")
+    plan = await reading_store.get_article(key, commit)
     if not plan:
+        if commit:
+            return api_error(
+                "VERSION_DATA_UNAVAILABLE",
+                "这个版本的段落数据不可用，请等待导入任务完成。",
+                503,
+            )
         try:
             result = await ai.segment_article(item["title"], content)
         except ai.AIError as exc:
@@ -654,43 +1006,92 @@ async def reading_open(request: Request):
         plan = {"summary": summary, "cuts": cuts}
     cuts = plan.get("cuts") or []
     summary = plan.get("summary") or ""
-    payload, total = await _segment_payload(item, key, summary, cuts, 0, uid)
-    await reading_store.append_event(key, uid, "open", 0, None)
+    rows = plan.get("segments") or []
+    if isinstance(rows, dict):
+        rows = rows.get("segments") or []
+    requested_segment_id = body.get("segment_id")
+    if requested_segment_id:
+        matches = [i for i, row in enumerate(rows) if row.get("segment_id") == requested_segment_id]
+        if not matches:
+            return api_error("SEGMENT_NOT_FOUND", "这个版本中没有该段落。", 404)
+        start_index = matches[0]
+    else:
+        raw_start = body.get("start_seg", 0)
+        start_index = raw_start if isinstance(raw_start, int) and not isinstance(raw_start, bool) else 0
+    segment_id = rows[start_index].get("segment_id") if 0 <= start_index < len(rows) else None
+    payload, total = await _segment_payload(
+        item, key, summary, cuts, start_index, uid, segment_id
+    )
+    if payload is None:
+        return api_error("SEGMENT_NOT_FOUND", "这个版本中没有该段落。", 404)
     return {"ok": True,
             "article": {"key": key, "title": item["title"], "summary": summary, "total": total,
                         "author": _author_from_collections(uid, key),
-                        "images": item.get("images") or []},
+                        "images": item.get("images") or [], "version": commit},
             "segment": payload}
 
 
 @app.get("/api/reading/segment")
-async def reading_segment(request: Request, url: str, seg: int = 0):
-    """进入某一段：返回段文本、初始解释（可懒生成）与该段可见节点"""
-    item, key, uid, error = await _reading_context(request, url)
+async def reading_segment(request: Request, url: str, version: str | None = None,
+                          segment_id: str | None = None, seg: int = 0):
+    """纯读取固定版本的一段及本人已有解释。"""
+    item, key, uid, error = await _reading_context(request, url, version)
     if error:
         return {"ok": False, "error": error}
-    plan = await reading_store.get_article(key)
+    commit = item.get("current_commit")
+    plan = await reading_store.get_article(key, commit)
     if not plan:
         return {"ok": False, "error": {"code": "NOT_OPENED", "message": "这个阅读会话还没开始。"}}
     cuts = plan.get("cuts") or []
     summary = plan.get("summary") or ""
-    payload, total = await _segment_payload(item, key, summary, cuts, seg, uid)
+    rows = plan.get("segments") or []
+    if isinstance(rows, dict):
+        rows = rows.get("segments") or []
+    if segment_id:
+        matches = [i for i, row in enumerate(rows) if row.get("segment_id") == segment_id]
+        if not matches:
+            return api_error("SEGMENT_NOT_FOUND", "这个版本中没有该段落。", 404)
+        seg = matches[0]
+    actual_segment_id = rows[seg].get("segment_id") if 0 <= seg < len(rows) else None
+    payload, total = await _segment_payload(
+        item, key, summary, cuts, seg, uid, actual_segment_id
+    )
     if payload is None:
         return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
-    await reading_store.append_event(key, uid, "open", seg, None)
     return {"ok": True,
-            "article": {"key": key, "title": item["title"], "summary": summary, "total": total},
+            "article": {"key": key, "title": item["title"], "summary": summary,
+                        "total": total, "version": commit},
             "segment": payload}
+
+
+@app.get("/api/reading/versions")
+async def reading_versions(request: Request, url: str, before: str | None = None,
+                           limit: int = 20):
+    _uid, account_error = require_account(request)
+    if account_error:
+        return api_error(account_error["code"], account_error["message"], 401)
+    key = _norm_key(url)
+    current = await store.get(key)
+    if current is None:
+        return api_error("ARTICLE_NOT_FOUND", "这篇文章还没有保存。", 404)
+    try:
+        rows = await store.list_article_versions(key, limit=limit, before=before)
+    except Exception:
+        return api_error("DEPENDENCY_UNAVAILABLE", "暂时无法读取版本列表。", 503)
+    return {"ok": True, "items": [{
+        "commit": row.get("git_commit"),
+        "parent_commit": row.get("parent_commit"),
+        "published_at": row.get("published_at"),
+        "current": row.get("git_commit") == current.get("current_commit"),
+    } for row in rows]}
 
 
 @app.get("/api/reading/history")
 async def reading_history(request: Request):
     """学习记录：每篇文章最后读到的段落位置（来自 open 埋点）"""
-    session = _current_session(request)
-    _token, login_error = _resolve_token(session)
-    if login_error:
-        return {"ok": False, "error": login_error}
-    uid = _user_key_id(session)
+    uid, account_error = require_account(request)
+    if account_error:
+        return api_error(account_error["code"], account_error["message"], 401)
     try:
         rows = await reading_store.list_recent_opened(uid)
     except Exception:
@@ -700,148 +1101,399 @@ async def reading_history(request: Request):
         art = await store.get(row["article_key"])
         if not art:
             continue
-        plan = await reading_store.get_article(row["article_key"])
+        plan = await reading_store.get_article(row["article_key"], row.get("git_commit"))
         total = len((plan or {}).get("cuts") or []) + 1
         items.append({"url": row["article_key"], "title": art.get("title") or row["article_key"],
-                      "seg": row["seg_index"], "total": total, "at": row["at"]})
+                      "seg": row["seg_index"], "segment_id": row.get("segment_id"),
+                      "version": row.get("git_commit"), "total": total, "at": row["at"]})
     return {"ok": True, "items": items}
 
 
 @app.delete("/api/reading/history")
 async def reading_history_delete(request: Request, url: str):
-    """删除一条学习记录，并把该文章重置为「未保存全文」的状态（可以重新用书签保存）
-
-    ⚠️ 全文是按内容键全局共享的：重置会连带删掉这篇的分段/解释/位置标记，
-    其他用户对这篇的学习进度与标记也会一起失效（设计取舍见 docs/学习会话设计-定稿.md 7.1）。
-    """
-    session = _current_session(request)
-    _token, login_error = _resolve_token(session)
-    if login_error:
-        return {"ok": False, "error": login_error}
+    """仅清除当前用户的阅读和自测进度，保留原文、解释与账单。"""
+    uid, account_error = require_account(request)
+    if account_error:
+        return api_error(account_error["code"], account_error["message"], 401)
     key = _norm_key(url)
     if not key:
         return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "缺少文章地址。"}}
-    uid = _user_key_id(session)
     try:
-        # 顺序：先清锚在全文上的分段与解释，再清本人的记录，最后删全文本身
-        await reading_store.delete_plan_and_nodes(key)
         await reading_store.delete_user_events(key, uid)
-        await store.delete(key)
-    except Exception as exc:
-        print(f"[reading] 重置文章失败：{exc}")
-        return {"ok": False, "error": {"code": "DB_FAILED", "message": "删除失败，请稍后再试。"}}
-    # 自测数据单独清：表未建时也不能让上面的删除（全文）失败
-    try:
-        await reading_store.delete_quiz(key)
         await reading_store.delete_quiz_attempts(key, uid)
     except Exception as exc:
-        print(f"[reading] 清理自测数据失败（全文已删除）：{exc}")
-    return {"ok": True}
+        print(f"[reading] 删除个人学习记录失败：{exc}")
+        return {"ok": False, "error": {"code": "DB_FAILED", "message": "删除失败，请稍后再试。"}}
+    return {"ok": True, "history_removed": True}
+
+
+def _points(microcredits) -> int:
+    try:
+        value = int(microcredits or 0)
+    except (TypeError, ValueError):
+        value = 0
+    return value // billing.MICROCREDITS_PER_CREDIT
+
+
+def _public_operation(row: dict) -> dict:
+    """Only expose the fields a user needs to resume one paid generation."""
+    result = row.get("result_json") or {}
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except (TypeError, ValueError):
+            result = {}
+    return {
+        "operation_id": str(row.get("id") or ""),
+        "action": row.get("action"),
+        "status": row.get("status"),
+        "quoted_points": _points(row.get("quoted_microcredits")),
+        "reserved_tokens": int(row.get("reserved_total_tokens") or
+                               _points(row.get("reserved_microcredits"))),
+        "usage_tokens": int(row.get("usage_tokens") or
+                            ((result.get("usage") or {}).get("total_tokens")
+                             if isinstance(result, dict) else 0) or 0),
+        "daily_consumed_tokens": int(row.get("charged_daily_tokens") or 0),
+        "wallet_charged_points": _points(row.get("charged_wallet_microcredits")),
+        "expires_at": row.get("quote_expires_at"),
+        "result_node_id": (str(row.get("result_node_id") or
+                               (result.get("node_id") if isinstance(result, dict) else ""))
+                           or None),
+        "error_code": row.get("error_code"),
+    }
+
+
+def _prepared_input_token_upper_bound(prepared: dict) -> int:
+    """Conservative pre-dispatch bound; settlement always uses provider total_tokens.
+
+    A tokenizer token cannot contain less than one input byte. Counting the complete
+    canonical provider payload in UTF-8 bytes, plus protocol headroom, therefore
+    deliberately over-reserves without underestimating the eventual input usage.
+    """
+    return len(billing.canonical_json_bytes(prepared)) + 256
+
+
+async def _quote_context(request: Request, body: dict):
+    item, key, uid, error = await _reading_context(
+        request, str(body.get("url") or ""), body.get("version")
+    )
+    if error:
+        return None, api_error(error["code"], error["message"], 401 if error["code"] in {
+            "LOGIN_REQUIRED", "SESSION_EXPIRED", "ACCOUNT_ID_REQUIRED"
+        } else 404)
+    commit = item.get("current_commit")
+    if not commit:
+        return None, api_error("VERSION_REQUIRED", "这篇文章尚未建立版本。", 503)
+    plan = await reading_store.get_article(key, commit)
+    if not plan:
+        return None, api_error("VERSION_DATA_UNAVAILABLE", "这个版本的段落数据不可用。", 503)
+    rows = plan.get("segments") or []
+    if isinstance(rows, dict):
+        rows = rows.get("segments") or []
+    segment_id = str(body.get("segment_id") or "")
+    indices = [i for i, row in enumerate(rows) if row.get("segment_id") == segment_id]
+    if not indices:
+        return None, api_error("SEGMENT_NOT_FOUND", "这个版本中没有该段落。", 404)
+    seg_index = indices[0]
+    seg_text, _total, _start = segments.split_at_cuts(
+        item["content"], plan.get("cuts") or [], seg_index
+    )
+    if seg_text is None:
+        return None, api_error("SEGMENT_NOT_FOUND", "这个版本中没有该段落。", 404)
+    return {
+        "item": item, "key": key, "uid": uid, "commit": commit,
+        "plan": plan, "segment_id": segment_id, "seg_index": seg_index,
+        "segment_text": seg_text,
+    }, None
+
+
+@app.get("/api/billing/account")
+async def billing_account(request: Request):
+    uid, error = require_account(request)
+    if error:
+        return api_error(error["code"], error["message"], 401)
+    try:
+        row = await billing.account(uid)
+    except Exception:
+        return api_error("DEPENDENCY_UNAVAILABLE", "暂时无法读取积分账户。", 503)
+    return {"ok": True, "account": {
+        "membership_tier": row.get("membership_tier") or "standard",
+        "membership_expires_at": row.get("membership_expires_at"),
+        "quota_period": row.get("quota_period") or billing.quota_period_key(
+            datetime.now(timezone.utc)
+        ),
+        "daily_limit_tokens": int(row.get("daily_limit_tokens") or
+            billing.daily_token_limit(row.get("membership_tier") or "standard")),
+        "daily_used_tokens": int(row.get("daily_used_tokens") or 0),
+        "daily_reserved_tokens": int(row.get("daily_reserved_tokens") or 0),
+        "daily_available_tokens": int(row.get("daily_available_tokens") or 0),
+        "balance_points": _points(row.get("balance_microcredits")),
+        "ai_reserved_points": _points(row.get("ai_reserved_microcredits")),
+        "refund_reserved_points": _points(row.get("refund_reserved_microcredits")),
+        "wallet_available_points": _points(row.get("available_microcredits")),
+        "billing_rule": "1 Token = 1 积分",
+        "daily_reset": "Asia/Shanghai 04:00",
+    }}
+
+
+@app.get("/api/billing/ledger")
+async def billing_ledger(request: Request, limit: int = 20,
+                         before_id: int | None = None):
+    uid, error = require_account(request)
+    if error:
+        return api_error(error["code"], error["message"], 401)
+    try:
+        rows = await billing.ledger(uid, limit=limit, before_id=before_id)
+    except Exception:
+        return api_error("DEPENDENCY_UNAVAILABLE", "暂时无法读取积分明细。", 503)
+    items = [{
+        "id": str(row.get("id")), "kind": row.get("kind"),
+        "points_delta": _points(row.get("balance_delta")),
+        "points_after": _points(row.get("balance_after")),
+        "created_at": row.get("created_at"),
+        "operation_id": row.get("ai_operation_id"),
+        "payment_order_id": row.get("payment_order_id"),
+        "refund_id": row.get("refund_id"),
+    } for row in rows]
+    return {"ok": True, "items": items,
+            "next_before_id": items[-1]["id"] if len(items) == max(1, min(limit, 100)) else None}
+
+
+@app.get("/api/billing/plans")
+async def billing_plans(request: Request):
+    _uid, error = require_account(request)
+    if error:
+        return api_error(error["code"], error["message"], 401)
+    if not settings.RECHARGE_ENABLED:
+        return {"ok": True, "recharge_available": False, "plans": [],
+                "membership": {"available": False, "tier": "premium",
+                               "monthly_price_fen": billing.PREMIUM_MONTHLY_PRICE_FEN,
+                               "daily_token_limit": billing.PREMIUM_DAILY_TOKENS}}
+    try:
+        plans = json.loads(settings.RECHARGE_PLANS_JSON or "[]")
+        rate = int(settings.RECHARGE_CREDITS_PER_CNY)
+        if not isinstance(plans, list) or rate <= 0:
+            raise ValueError
+        public = []
+        for plan in plans:
+            if not isinstance(plan, dict) or not isinstance(plan.get("amount_fen"), int):
+                raise ValueError
+            amount = int(plan["amount_fen"])
+            public.append({"id": str(plan.get("id") or ""), "amount_fen": amount,
+                           "points": billing.recharge_microcredits(amount, rate) //
+                                     billing.MICROCREDITS_PER_CREDIT})
+    except (TypeError, ValueError, billing.BillingError):
+        return api_error("BILLING_CONFIG_UNAVAILABLE", "充值档位配置不可用。", 503)
+    return {"ok": True, "recharge_available": True, "plans": public,
+            "membership": {"available": False, "tier": "premium",
+                           "monthly_price_fen": billing.PREMIUM_MONTHLY_PRICE_FEN,
+                           "daily_token_limit": billing.PREMIUM_DAILY_TOKENS}}
+
+
+async def _require_advanced_member(uid: str):
+    try:
+        account = await billing.account(uid)
+        expires = datetime.fromisoformat(str(account.get("membership_expires_at") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return api_error("MEMBERSHIP_REQUIRED", "高级解释为会员功能，请联系管理员开通。", 403)
+    except Exception:
+        return api_error("DEPENDENCY_UNAVAILABLE", "暂时无法核验会员状态，请稍后重试。", 503)
+    if (account.get("membership_tier") != "premium" or expires.tzinfo is None
+            or expires <= datetime.now(timezone.utc)):
+        return api_error("MEMBERSHIP_REQUIRED", "高级解释为会员功能，请联系管理员开通。", 403)
+    return None
+
+
+@app.post("/api/reading/quote")
+async def reading_quote(request: Request):
+    if not settings.BILLING_ENABLED:
+        return api_error("BILLING_UNAVAILABLE", "积分计费尚未启用。", 503)
+    try:
+        body = await request.json()
+    except Exception:
+        return api_error("BAD_REQUEST", "请求体不是合法 JSON。", 400)
+    ctx, error_response = await _quote_context(request, body)
+    if error_response:
+        return error_response
+    action = str(body.get("action") or "")
+    if action == "advanced":
+        member_error = await _require_advanced_member(ctx["uid"])
+        if member_error is not None:
+            return member_error
+    parent_id = body.get("parent_id")
+    replace_node_id = body.get("replace_node_id")
+    try:
+        parent_id = int(parent_id) if parent_id is not None else None
+        replace_node_id = int(replace_node_id) if replace_node_id is not None else None
+        pos_start = body.get("pos_start")
+        pos_end = body.get("pos_end")
+        if pos_start is not None:
+            pos_start = int(pos_start)
+        if pos_end is not None:
+            pos_end = int(pos_end)
+        question = str(body.get("question") or "") if action in {"ask", "advanced"} else None
+        intent = billing.AIRequestIntent(
+            action, ctx["key"], ctx["commit"], ctx["segment_id"],
+            parent_id=parent_id, replace_node_id=replace_node_id,
+            pos_start=pos_start, pos_end=pos_end, question=question,
+        )
+    except (TypeError, ValueError, billing.BillingError) as exc:
+        code = getattr(exc, "code", "INVALID_INPUT")
+        return api_error(code, str(exc), 422)
+    scope_text = ctx["segment_text"]
+    anchor_text = ""
+    if parent_id is not None:
+        parent = await reading_store.get_private_node(
+            parent_id, ctx["uid"], ctx["key"], ctx["segment_id"]
+        )
+        if not parent:
+            return api_error("PARENT_NOT_FOUND", "上一级解释不存在。", 404)
+        scope_text = str(parent.get("content") or "")
+        anchor_text = str(parent.get("question") or parent.get("content") or "")
+    if action == "init":
+        prepared = ai.prepare_explain_segment(
+            ctx["item"]["title"], ctx["plan"].get("summary") or "", ctx["segment_text"]
+        )
+    elif action == "explain":
+        if not (0 <= pos_start < pos_end <= len(scope_text)):
+            return api_error("INVALID_OFFSET", "选区范围不合法。", 422)
+        overlap = await reading_store.find_overlap(
+            ctx["key"], ctx["seg_index"], pos_start, pos_end, ctx["uid"], parent_id
+        )
+        if overlap and replace_node_id is None:
+            return api_error("OVERLAP", "这段文字已经有解释了。", 409)
+        prepared = ai.prepare_explain_selection(
+            ctx["item"]["title"], ctx["plan"].get("summary") or "",
+            ctx["segment_text"], scope_text[pos_start:pos_end],
+        )
+    elif action == "advanced":
+        if pos_start is not None or pos_end is not None:
+            if not (isinstance(pos_start, int) and isinstance(pos_end, int)
+                    and 0 <= pos_start < pos_end <= len(scope_text)):
+                return api_error("INVALID_OFFSET", "选区范围不合法。", 422)
+            anchor_text = scope_text[pos_start:pos_end]
+        try:
+            prepared = advanced.prepare(ctx["item"]["title"], ctx["item"]["content"],
+                                        ctx["segment_text"], anchor_text, question)
+        except ai.AIError as exc:
+            return api_error("INVALID_INPUT", str(exc), 422)
+    elif action == "ask":
+        if pos_start is not None or pos_end is not None:
+            if not (0 <= pos_start < pos_end <= len(scope_text)):
+                return api_error("INVALID_OFFSET", "选区范围不合法。", 422)
+            anchor_text = scope_text[pos_start:pos_end]
+        prepared = ai.prepare_answer_question(
+            question, ctx["plan"].get("summary") or "", anchor_text,
+            ctx["segment_text"],
+        )
+    else:
+        return api_error("INVALID_INPUT", "未知生成类型。", 422)
+    try:
+        idem = _canonical_uuid(body.get("idempotency_key"), "idempotency_key")
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(seconds=billing.QUOTE_TTL_SECONDS)
+        budget_end = expires + timedelta(
+            seconds=billing.MAX_QUEUE_SECONDS + billing.DISPATCH_DEADLINE_SECONDS
+        )
+        policy = billing.TokenBillingPolicy(
+            requested_model=prepared["model"],
+            allowed_returned_models=(prepared["model"],),
+            tokenizer_revision="utf8-byte-upper-bound-v1",
+            prompt_template_revision=("advanced-" + prepared["plugin_revision"]
+                                      if action == "advanced" else "reading-prompts-v1"),
+            output_limit=int(prepared["max_tokens"]),
+        )
+        quote = billing.quote_budget(
+            policy, input_token_upper_bound=(advanced.INPUT_BUDGET if action == "advanced"
+                                             else _prepared_input_token_upper_bound(prepared)),
+            quoted_at=now, quote_expires_at=expires, budget_valid_until=budget_end,
+        )
+        operation_id = str(uuid4())
+        row = await billing.create_quote_record(
+            uid=ctx["uid"], operation_id=operation_id, idempotency_key=idem,
+            request_hash_value=(billing.stable_json_hash({"intent": intent.fingerprint_payload(),
+                                "prepared": prepared}) if action == "advanced" else intent.request_hash()), intent=intent,
+            prepared_request=prepared, policy=policy, quote=quote,
+            quoted_at=now, quote_expires_at=expires,
+        )
+    except billing.BillingError as exc:
+        status = 409 if exc.code == "IDEMPOTENCY_CONFLICT" else 422
+        return api_error(exc.code, exc.message, status)
+    except Exception as exc:
+        print(f"[billing] 创建报价失败：{exc}")
+        return api_error("DEPENDENCY_UNAVAILABLE", "暂时无法创建积分报价。", 503)
+    return {"ok": True, **_public_operation(row or {
+        "id": operation_id, "action": action, "status": "quoted",
+        "quoted_microcredits": quote.quoted_microcredits,
+        "quote_expires_at": expires.isoformat(),
+    }), "billing_rule": "1 Token = 1 积分"}
+
+
+async def _submit_billed_operation(request: Request, expected_action: str):
+    if not settings.BILLING_ENABLED:
+        return api_error("BILLING_UNAVAILABLE", "积分计费尚未启用。", 503)
+    uid, error = require_account(request)
+    if error:
+        return api_error(error["code"], error["message"], 401)
+    try:
+        body = await request.json()
+        operation_id = _canonical_uuid(body.get("operation_id"), "operation_id")
+        existing = await billing.get_operation(uid, operation_id)
+        if not existing:
+            return api_error("OPERATION_NOT_FOUND", "生成任务不存在。", 404)
+        if existing.get("action") != expected_action:
+            return api_error("OPERATION_MISMATCH", "生成任务类型不匹配。", 409)
+        if expected_action == "advanced":
+            member_error = await _require_advanced_member(uid)
+            if member_error is not None:
+                return member_error
+        row = await billing.reserve_operation(uid, operation_id)
+    except (ValueError, billing.BillingError) as exc:
+        return api_error(getattr(exc, "code", "INVALID_INPUT"), str(exc), 422)
+    except Exception as exc:
+        print(f"[billing] 提交生成失败：{exc}")
+        return api_error("DEPENDENCY_UNAVAILABLE", "暂时无法提交生成任务。", 503)
+    return JSONResponse({"ok": True, **_public_operation(row)}, status_code=202)
+
+
+@app.post("/api/reading/init")
+async def reading_init(request: Request):
+    return await _submit_billed_operation(request, "init")
 
 
 @app.post("/api/reading/selection")
 async def reading_selection(request: Request):
-    """提交选区（纯选中）：生成共享解释，段内区间不重叠"""
-    try:
-        body = await request.json()
-    except Exception:
-        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
-    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
-    if error:
-        return {"ok": False, "error": error}
-    try:
-        seg = int(body.get("seg") or 0)
-        pos_start = int(body.get("pos_start"))
-        pos_end = int(body.get("pos_end"))
-    except (TypeError, ValueError):
-        return {"ok": False, "error": {"code": "BAD_RANGE", "message": "选区参数不合法。"}}
-    plan = await reading_store.get_article(key)
-    if not plan:
-        return {"ok": False, "error": {"code": "NOT_OPENED", "message": "这个阅读会话还没开始。"}}
-    seg_text, _total, _seg_start = segments.split_at_cuts(item["content"], plan.get("cuts") or [], seg)
-    if seg_text is None:
-        return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
-    parent_id = body.get("parent_id")
-    parent_id = int(parent_id) if parent_id is not None else None
-    # 层内选区：偏移始终相对父节点的内容文本（节点内容 = 该层的父文本）
-    scope_text = seg_text
-    if parent_id is not None:
-        parent_node = await reading_store.get_node(parent_id)
-        if parent_node is not None:
-            scope_text = parent_node.get("content") or ""
-    if not (0 <= pos_start < pos_end <= len(scope_text)):
-        return {"ok": False, "error": {"code": "BAD_RANGE", "message": "选区范围不合法。"}}
-    overlap = await reading_store.find_overlap(key, seg, pos_start, pos_end, parent_id)
-    if overlap:
-        return {"ok": False, "error": {"code": "OVERLAP", "message": "这段文字已经有解释了。"}}
-    try:
-        text = await ai.explain_selection(item["title"], plan.get("summary") or "",
-                                          seg_text, scope_text[pos_start:pos_end])
-    except ai.AIError as exc:
-        return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
-    node = await reading_store.create_node(key, seg, "explain", text, uid,
-                                           parent_id=parent_id,
-                                           pos_start=pos_start, pos_end=pos_end)
-    if node is None:
-        return {"ok": False, "error": {"code": "CONFLICT", "message": "该处已有解释。"}}
-    return {"ok": True, "node": node}
+    """Execute an accepted selection quote; targets are immutable in the operation."""
+    return await _submit_billed_operation(request, "explain")
 
 
 @app.post("/api/reading/ask")
 async def reading_ask(request: Request):
-    """私有提问：可锚定选区或父节点（追问链通过 parent_id 嵌套）"""
-    try:
-        body = await request.json()
-    except Exception:
-        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
-    question = str(body.get("question") or "").strip()
-    if not question:
-        return {"ok": False, "error": {"code": "EMPTY_QUESTION", "message": "请输入问题。"}}
-    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    """Execute an accepted question quote; the question cannot change after quote."""
+    return await _submit_billed_operation(request, "ask")
+
+
+@app.post("/api/reading/advanced")
+async def reading_advanced(request: Request):
+    """Member explanation, using the same immutable quote and settlement lifecycle."""
+    return await _submit_billed_operation(request, "advanced")
+
+
+@app.get("/api/reading/operations/{operation_id}")
+async def reading_operation(request: Request, operation_id: str):
+    uid, error = require_account(request)
     if error:
-        return {"ok": False, "error": error}
+        return api_error(error["code"], error["message"], 401)
     try:
-        seg = int(body.get("seg") or 0)
-    except (TypeError, ValueError):
-        return {"ok": False, "error": {"code": "BAD_RANGE", "message": "段落参数不合法。"}}
-    parent_id = body.get("parent_id")
-    pos_start = body.get("pos_start")
-    pos_end = body.get("pos_end")
-    plan = await reading_store.get_article(key)
-    if not plan:
-        return {"ok": False, "error": {"code": "NOT_OPENED", "message": "这个阅读会话还没开始。"}}
-    seg_text, _total, _seg_start = segments.split_at_cuts(item["content"], plan.get("cuts") or [], seg)
-    if seg_text is None:
-        return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
-    anchor_text = ""
-    # 选区校验（无效则清空）；层内偏移始终相对父节点的内容文本
-    scope_text = seg_text
-    if parent_id is not None:
-        parent_node = await reading_store.get_node(int(parent_id))
-        if parent_node is not None:
-            scope_text = parent_node.get("content") or ""
-    if not (isinstance(pos_start, int) and isinstance(pos_end, int)
-            and 0 <= pos_start < pos_end <= len(scope_text)):
-        pos_start = pos_end = None
-    # 提问锚点：优先用显式传入的选中文本（右栏解释里选中的内容），否则由区间/父节点推导
-    anchor_text = str(body.get("anchor_text") or "").strip()[:600]
-    if not anchor_text and pos_start is not None:
-        anchor_text = scope_text[pos_start:pos_end]
-    if not anchor_text and parent_id is not None:
-        parent = await reading_store.get_node(int(parent_id))
-        if parent:
-            anchor_text = parent.get("question") or parent.get("content") or ""
-    try:
-        answer = await ai.answer_question(question, plan.get("summary") or "",
-                                          anchor_text, seg_text)
-    except ai.AIError as exc:
-        return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
-    node = await reading_store.create_node(key, seg, "ask", answer, uid,
-                                           parent_id=int(parent_id) if parent_id is not None else None,
-                                           pos_start=pos_start, pos_end=pos_end, question=question)
-    if node is None:
-        return {"ok": False, "error": {"code": "CONFLICT", "message": "保存失败，请重试。"}}
-    return {"ok": True, "node": node}
+        operation_id = _canonical_uuid(operation_id, "operation_id")
+        row = await billing.get_operation(uid, operation_id)
+    except ValueError as exc:
+        return api_error("INVALID_INPUT", str(exc), 422)
+    except Exception:
+        return api_error("DEPENDENCY_UNAVAILABLE", "暂时无法读取生成任务。", 503)
+    if not row:
+        return api_error("OPERATION_NOT_FOUND", "生成任务不存在。", 404)
+    return {"ok": True, **_public_operation(row)}
 
 
 @app.post("/api/reading/image")
@@ -895,15 +1547,29 @@ async def reading_event(request: Request):
     event = str(body.get("event") or "")
     if event not in ("open", "understood", "deleted", "finished", "reviewed", "quiz_done"):
         return {"ok": False, "error": {"code": "BAD_EVENT", "message": "未知事件。"}}
-    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    item, key, uid, error = await _reading_context(
+        request, str(body.get("url") or ""), body.get("version")
+    )
     if error:
         return {"ok": False, "error": error}
     seg_index = body.get("seg_index")
+    segment_id = body.get("segment_id")
+    commit = item.get("current_commit")
+    plan = await reading_store.get_article(key, commit)
+    rows = (plan or {}).get("segments") or []
+    if isinstance(rows, dict):
+        rows = rows.get("segments") or []
+    if commit and (not isinstance(segment_id, str)
+                   or segment_id not in {row.get("segment_id") for row in rows}):
+        return api_error("SEGMENT_NOT_FOUND", "这个版本中没有该段落。", 404)
     node_id = body.get("node_id")
+    if isinstance(node_id, str) and node_id.isdecimal():
+        node_id = int(node_id)
     await reading_store.append_event(
         key, uid, event,
         int(seg_index) if isinstance(seg_index, int) else None,
-        int(node_id) if isinstance(node_id, int) else None,
+        node_id if isinstance(node_id, int) and not isinstance(node_id, bool) else None,
+        git_commit=commit, segment_id=segment_id,
     )
     return {"ok": True}
 
@@ -1097,7 +1763,15 @@ async def reading_review(request: Request):
         except Exception as exc:
             print(f"[review] 读取提问失败：{exc}")
 
-    cache_key = "review:" + key if mode == "general" else ""
+    cache_key = ""
+    if mode == "general":
+        if questions:
+            fingerprint = hashlib.sha256(json.dumps(
+                questions, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")).hexdigest()
+            cache_key = f"review:{uid}:{key}:{fingerprint}"
+        else:
+            cache_key = "review:" + key + ":no-personal-input"
     if cache_key:
         cached = content_cache.get(cache_key)
         if cached:
@@ -1113,18 +1787,25 @@ async def reading_review(request: Request):
 
 
 @app.delete("/api/reading/node/{node_id}")
-async def reading_delete_node(request: Request, node_id: int, url: str = ""):
-    """删除解释/提问（含全部子层）：共享解释人人可删（自愈），私有提问仅本人可删"""
-    item, key, uid, error = await _reading_context(request, url)
+async def reading_delete_node(request: Request, node_id: int, url: str = "",
+                              version: str | None = None,
+                              segment_id: str | None = None):
+    """软删除本人的节点和parent后代，不沿修订链扩散。"""
+    item, key, uid, error = await _reading_context(request, url, version)
     if error:
         return {"ok": False, "error": error}
-    node = await reading_store.get_node(node_id)
+    if not item.get("current_commit") or not segment_id:
+        return api_error("INVALID_INPUT", "删除解释需要version和segment_id。", 422)
+    node = await reading_store.get_private_node(
+        node_id, uid, key, segment_id, include_history=True
+    )
     if not node:
-        return {"ok": False, "error": {"code": "NOT_FOUND", "message": "节点不存在。"}}
-    if node.get("kind") == "ask" and node.get("uid") != uid:
-        return {"ok": False, "error": {"code": "FORBIDDEN", "message": "只能删除自己的提问。"}}
-    deleted = await reading_store.delete_node_tree(node_id)
-    await reading_store.append_event(key, uid, "deleted", node.get("seg_index"), node_id)
+        return api_error("NODE_NOT_FOUND", "节点不存在。", 404)
+    deleted = await reading_store.soft_delete_private_tree(node_id, uid, key, segment_id)
+    await reading_store.append_event(
+        key, uid, "deleted", node.get("seg_index"), node_id,
+        git_commit=item.get("current_commit"), segment_id=segment_id,
+    )
     return {"ok": True, "deleted": deleted}
 
 

@@ -136,19 +136,14 @@
       "}",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
       "if(!confirm('保存这篇文章？（书签 " + BOOKMARKLET_VERSION + "）\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
-      // 是否从站里来的：优先看 #kd=1 标记，其次看 referrer（从站里打开的新标签页带着我们的域名）。
-      // 知乎点开大图（灯箱）会改写地址、把 #kd=1 抹掉——只认标记就会既不跳转、又把内容存到错键上
-      "var fromStation=location.hash.indexOf('kd=1')>=0||(document.referrer||'').indexOf('" + origin + "')===0;",
-      "var backTo='" + origin + "/?saved='+encodeURIComponent(pageUrl);",
-      "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:pageUrl,content:text,images:imgs})})",
-      ".then(function(r){return r.json()})",
-      ".then(function(d){",
-      "if(!d.ok){alert('失败：'+((d.error&&d.error.message)||'未知错误'));return;}",
-      "if(fromStation){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){location.href=backTo;}},400);}",
-      "else if(confirm('已保存到知识蒸馏站（'+text.length+' 字）。要回站里读这篇吗？')){location.href=backTo;}",
-      "else{alert('✓ 已保存（'+text.length+' 字）');}",
-      "});",
-      "})();",
+      "var target=window.open('" + origin + "/?import=1','kd-import');",
+      "if(!target){alert('浏览器拦截了保存窗口，请允许弹窗后重试。');return;}",
+      "var packet={type:'knowledge-distiller-import-v1',payload:{title:title,url:pageUrl,content:text,images:imgs}};",
+      "var attempts=0;var timer=setInterval(function(){",
+      "if(target.closed||attempts++>120){clearInterval(timer);return;}",
+      "target.postMessage(packet,'" + origin + "');",
+      "},500);",
+      "window.addEventListener('message',function(ev){if(ev.origin==='" + origin + "'&&ev.data&&ev.data.type==='knowledge-distiller-import-accepted'){clearInterval(timer);}});",      "})();",
     ].join("");
   }
 
@@ -274,8 +269,76 @@
 
   async function api(path, options) {
     const resp = await fetch(path, options);
-    if (!resp.ok) throw new Error(`请求失败（HTTP ${resp.status}）`);
-    return resp.json();
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.ok === false) {
+      const err = new Error((data.error && data.error.message) || `请求失败（HTTP ${resp.status}）`);
+      err.code = data.error && data.error.code;
+      err.details = data.error && data.error.details;
+      throw err;
+    }
+    return data;
+  }
+
+  let importBusy = false;
+  function importId() {
+    return (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0;
+          return (c === "x" ? r : (r & 3 | 8)).toString(16);
+        });
+  }
+  async function importArticle(payload) {
+    if (importBusy || !payload) return;
+    importBusy = true;
+    sessionStorage.setItem("kd_pending_import_v1", JSON.stringify(payload));
+    try {
+      const preview = await api("/api/ingest", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, preview_only: true }),
+      });
+      if (preview.unchanged) {
+        sessionStorage.removeItem("kd_pending_import_v1");
+        location.href = readingHref(payload.url);
+        return;
+      }
+      const task = await api("/api/ingest", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload,
+          expected_current_commit: preview.current_commit || null,
+          idempotency_key: importId(),
+        }),
+      });
+      for (;;) {
+        const status = await api("/api/ingest/" + encodeURIComponent(task.update_id));
+        if (status.state === "published") {
+          sessionStorage.removeItem("kd_pending_import_v1");
+          location.href = "/reading.html?url=" + encodeURIComponent(payload.url)
+            + "&version=" + encodeURIComponent(status.commit || "");
+          return;
+        }
+        if (["failed", "conflict"].includes(status.state)) {
+          throw new Error(status.error_code || "内容版本没有发布成功，请重试。");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    } catch (err) {
+      if (["LOGIN_REQUIRED", "SESSION_EXPIRED", "ACCOUNT_ID_REQUIRED"].includes(err.code)) {
+        location.href = "/api/oauth/start?next=" + encodeURIComponent("/?resume_import=1");
+        return;
+      }
+      alert("保存失败：" + (err.message || "未知错误"));
+    } finally {
+      importBusy = false;
+    }
+  }
+  window.addEventListener("message", (event) => {
+    if (!["https://www.zhihu.com", "https://zhuanlan.zhihu.com"].includes(event.origin)) return;
+    if (!event.data || event.data.type !== "knowledge-distiller-import-v1") return;
+    try { event.source.postMessage({ type: "knowledge-distiller-import-accepted" }, event.origin); } catch (_) {}
+    importArticle(event.data.payload);
+  });
+  if (new URLSearchParams(location.search).get("resume_import") === "1") {
+    try { importArticle(JSON.parse(sessionStorage.getItem("kd_pending_import_v1") || "null")); } catch (_) {}
   }
 
   // ---- 渲染：雷达图与卡片 ----
@@ -618,6 +681,17 @@
     els.userSub.textContent = "点击登录知乎账号";
   }
 
+  async function loadAccountBadge() {
+    if (!status || !status.authorized) return;
+    try {
+      const data = await api("/api/billing/account");
+      const account = data.account || {};
+      const tier = account.membership_tier === "premium" ? "高级会员" : "普通用户";
+      els.userSub.textContent = tier + " · 本周期剩余 "
+        + Number(account.daily_available_tokens || 0).toLocaleString("zh-CN") + " Token";
+    } catch (_) { /* 计费库尚未部署时保留普通登录文案 */ }
+  }
+
   function renderFavLists() {
     if (!favlists.length) {
       els.favSub.innerHTML = `<div class="nav-sub-loading">没有可用的收藏夹</div>`;
@@ -717,6 +791,7 @@
       return;
     }
     renderUser();
+    loadAccountBadge();
 
     const params = new URLSearchParams(location.search);
     const canRead = status.authorized || status.self_mode;
@@ -731,7 +806,8 @@
       if (status.callback_configured) {
         // 保存后跳回（?saved=）要把目标一起带上：否则会被这次授权跳转吃掉，
         // 登录完只落回首页，用户看到的就是"保存了却没跳转"
-        const next = savedUrl ? "/reading.html?url=" + encodeURIComponent(savedUrl) : "";
+        const next = savedUrl ? "/reading.html?url=" + encodeURIComponent(savedUrl)
+          : (requestedFavlist ? "/?favlist=" + encodeURIComponent(requestedFavlist) : "");
         location.href = "/api/oauth/start" + (next ? "?next=" + encodeURIComponent(next) : "");
         return;
       }
@@ -1074,6 +1150,30 @@
 
   // 保存书签：初始化 / 复制书签（富文本，可粘贴成书签）/ 复制代码
   initBookmarklet();
+  // 安装方式依据访问设备，不随窗口宽度变化；iPad 的桌面 UA 用触控能力辅助识别。
+  const mobileBookmark = Boolean(navigator.userAgentData?.mobile
+    || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+  document.documentElement.dataset.bookmarkDevice = mobileBookmark ? "mobile" : "desktop";
+  const bookmarkInstall = $("bookmark-install");
+  const bookmarkCopyStatus = $("bookmark-copy-status");
+  const localBookmarkHint = $("bookmark-local-hint");
+  if (localBookmarkHint) localBookmarkHint.hidden = !["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+  function revealBookmarkInstall() {
+    showHome();
+    if (!bookmarkInstall) return;
+    bookmarkInstall.open = true;
+    bookmarkInstall.scrollIntoView({ block: "start", behavior: "instant" });
+    const summary = bookmarkInstall.querySelector("summary");
+    if (summary) summary.focus({ preventScroll: true });
+  }
+  const mobileInstallButton = $("mobile-install-bookmark");
+  if (mobileInstallButton) mobileInstallButton.addEventListener("click", revealBookmarkInstall);
+  if (els.distillGuideBody) els.distillGuideBody.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-bookmark-install]")) return;
+    els.distillGuide.hidden = true;
+    revealBookmarkInstall();
+  });
 
   async function copyBookmarkAsLink() {
     const code = buildBookmarklet();
@@ -1090,7 +1190,9 @@
       } else {
         await navigator.clipboard.writeText(code);
       }
-      if (hint) hint.textContent = "现在右键浏览器书签栏 →「粘贴」";
+      if (hint) hint.textContent = mobileBookmark
+        ? "请编辑已添加的书签，把网址替换为刚复制的完整代码。"
+        : "现在右键浏览器书签栏 →「粘贴」";
       if (els.homeCopyBookmark) {
         els.homeCopyBookmark.textContent = "已复制 ✓";
         setTimeout(() => { els.homeCopyBookmark.textContent = "📋 复制书签"; }, 2500);
@@ -1107,10 +1209,17 @@
       try {
         await navigator.clipboard.writeText(els.homeBookmarkletCode.value);
         els.homeCopyBookmarklet.textContent = "已复制 ✓";
+        if (bookmarkCopyStatus) bookmarkCopyStatus.textContent = mobileBookmark
+          ? "代码已复制。编辑「保存这篇文章」书签，把网址替换成这段完整代码。"
+          : "代码已复制，粘贴到书签的网址一栏即可。";
         setTimeout(() => { els.homeCopyBookmarklet.textContent = "复制书签代码"; }, 1800);
       } catch (err) {
         els.homeBookmarkletCode.select();
-        els.homeCopyBookmarklet.textContent = "请按 Ctrl+C 复制";
+        els.homeBookmarkletCode.setSelectionRange(0, els.homeBookmarkletCode.value.length);
+        els.homeCopyBookmarklet.textContent = "手动复制代码";
+        if (bookmarkCopyStatus) bookmarkCopyStatus.textContent = mobileBookmark
+          ? "请长按代码，选择「全选」后复制，再粘贴到书签的网址一栏。"
+          : "代码已选中，请按 Ctrl+C 复制。";
       }
     });
   }
@@ -1179,7 +1288,9 @@
       els.distillGuideDot.hidden = false;
       els.distillGuideTitle.textContent = "等待全文送达…";
       els.distillGuideBody.innerHTML =
-        "已打开知乎原文。请在那一页点一下书签栏的 <b>「🧪 保存这篇文章」</b>，确认后这里会自动亮起。"
+        (mobileBookmark
+          ? "请在同一浏览器打开知乎网页版并展开正文，再调用 <b>「保存这篇文章」</b> 书签。<br><button class=\"btn-ghost btn-small\" type=\"button\" data-bookmark-install>查看手机安装步骤</button>"
+          : "已打开知乎原文。请在那一页点一下书签栏的 <b>「🧪 保存这篇文章」</b>，确认后这里会自动亮起。")
         + (title ? `<div class="gd-target">《${escapeHtml(title)}》</div>` : "");
     } else if (state === "success") {
       els.distillGuideDot.hidden = true;
@@ -1191,7 +1302,9 @@
     } else if (state === "timeout") {
       els.distillGuideDot.hidden = true;
       els.distillGuideTitle.textContent = "还没收到全文";
-      els.distillGuideBody.innerHTML = "书签还没装好？回首页拖一下（5 秒）；装好后到知乎文章页再点一次即可。";
+      els.distillGuideBody.innerHTML = mobileBookmark
+        ? "请确认在知乎网页版运行了保存书签，并已展开全文。<br><button class=\"btn-ghost btn-small\" type=\"button\" data-bookmark-install>查看手机安装步骤</button>"
+        : "书签还没装好？回首页拖一下（5 秒）；装好后到知乎文章页再点一次即可。";
     }
   }
 
@@ -1204,14 +1317,14 @@
 
   // 切回本页时立即检查一次：既覆盖「去蒸馏」等待中，也覆盖手动在知乎页蒸好的情况
   document.addEventListener("visibilitychange", async () => {
-    if (document.visibilityState !== "visible") return;
+    if (document.visibilityState !== "visible" || !stationStarted) return;
     if (watch) { checkWatch(); return; }
     await checkDistilledUpdates();
   });
 
   // 从精读页按浏览器返回时，页面可能直接从内存恢复；重新取进度，避免卡片停在旧段落。
   window.addEventListener("pageshow", async (event) => {
-    if (!event.persisted) return;
+    if (!event.persisted || !stationStarted) return;
     await refreshHistoryMap();
     if (els.viewCollections && !els.viewCollections.hidden && allItems.length) renderCards();
     if (els.viewRecommend && !els.viewRecommend.hidden && recommendItems.length) renderRecommendCards();
@@ -1265,12 +1378,12 @@
     if (host) host.remove();
   }
 
-  function registerStationTutorial() {
+  function registerStationTutorial(autoStart) {
     if (!window.KDTutorial) return;
     window.KDTutorial.register({
       id: "station-basics",
       version: 2,
-      autoStart: true,
+      autoStart: Boolean(autoStart),
       delay: 180,
       steps: [
         {
@@ -1295,17 +1408,19 @@
           target: ".home-bookmark",
           beforeShow: () => { hideTutorialArticle(); showHome(); },
           title: "第一次先安装保存书签",
-          description: "把“保存这篇文章”拖到浏览器书签栏。以后在知乎文章页点一下，就能把完整正文送回这里。",
+          description: mobileBookmark
+            ? "在首页打开“手机安装步骤”，复制保存代码，再把它粘贴到书签的网址一栏。以后在知乎网页版运行这个书签即可保存全文。"
+            : "把首页的“保存这篇文章”拖到浏览器书签栏。以后在知乎文章页点一下这个书签，就能把完整正文送回这里。",
         },
         {
-          target: "#hist-parent",
+          target: ["#hist-parent", ".mobile-nav-toggle"],
           title: "从学习记录接着读",
-          description: "读过的文章和段落进度都会留在这里。下次点开时，会回到上次停下的位置。",
+          description: "读过的文章和段落进度都会留在学习记录中。手机先点底部“导航”，再打开“学习记录”，即可回到上次停下的位置。",
         },
         {
-          target: "#nav-recommend",
+          target: ["#nav-recommend", ".mobile-nav-toggle"],
           title: "也可以看看智能推荐",
-          description: "智能推荐会参考你的收藏兴趣，补充适合继续学习的公共内容。现在可以去挑第一篇文章了。",
+          description: "智能推荐会参考你的收藏兴趣，补充适合继续学习的公共内容。手机可从底部“导航”进入，现在去挑第一篇文章吧。",
         },
       ],
       onFinish: () => { hideTutorialArticle(); showView("collections"); },
@@ -1313,5 +1428,123 @@
     });
   }
 
-  boot().finally(registerStationTutorial);
+  // 产品介绍与业务入口共用本页；只有点击进入后才请求收藏、发起授权和教学。
+  const intro = $("product-intro");
+  const introKey = "kd:intro:v1";
+  const entryParams = new URLSearchParams(location.search);
+  const directEntry = ["saved", "oauth", "favlist"].some((key) => entryParams.has(key));
+  const stationTitle = document.title;
+  let stationStarted = false;
+  let introObserver = null;
+
+  function observeIntroScenes() {
+    if (!intro || intro.hidden) return;
+    if (introObserver) introObserver.disconnect();
+    // 以滚动容器的中线确定当前幕；像素边距避免宽屏百分比边距压没观察区域。
+    const inset = Math.max(0, Math.floor(intro.clientHeight / 2) - 1);
+    introObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        entry.target.classList.toggle("intro-visible", entry.isIntersecting);
+        if (!entry.isIntersecting) continue;
+        const step = entry.target.dataset.introStep;
+        if ($("intro-position")) $("intro-position").textContent = String(step).padStart(2, "0") + " / 06";
+        intro.querySelectorAll('a[href^="#intro-scene-"]').forEach((link) => {
+          if (link.getAttribute("href") === "#intro-scene-" + step) link.setAttribute("aria-current", "step");
+          else link.removeAttribute("aria-current");
+        });
+      }
+    }, { root: intro, rootMargin: "-" + inset + "px 0px -" + inset + "px 0px" });
+    intro.querySelectorAll(".intro-scene").forEach((scene) => introObserver.observe(scene));
+  }
+
+  function enterStation(remember) {
+    if (stationStarted) return;
+    stationStarted = true;
+    if (remember) {
+      try { localStorage.setItem(introKey, "entered"); }
+      catch (err) { /* 无法持久化时仍可正常进入。 */ }
+    }
+    const url = new URL(location.href);
+    url.searchParams.delete("intro");
+    if (url.hash.startsWith("#intro-scene-")) url.hash = "";
+    if (url.href !== location.href) history.replaceState(history.state, "", url);
+    if (introObserver) introObserver.disconnect();
+    window.removeEventListener("resize", observeIntroScenes);
+    if (intro) intro.hidden = true;
+    document.body.classList.remove("intro-active");
+    document.title = stationTitle;
+    els.page.hidden = false;
+    showView("collections");
+    showState("Loading");
+    if (remember) {
+      window.scrollTo({ top: 0, behavior: "instant" });
+      els.favlistTitle.tabIndex = -1;
+      els.favlistTitle.focus({ preventScroll: true });
+    }
+    boot().finally(() => registerStationTutorial(
+      !entryParams.has("saved") && !entryParams.has("favlist") && entryParams.get("oauth") !== "error"
+        && status && (status.authorized || status.self_mode)
+    ));
+  }
+
+  document.querySelectorAll("[data-intro-enter]").forEach((button) => {
+    button.addEventListener("click", () => enterStation(true));
+  });
+  document.querySelectorAll("[data-intro-open]").forEach((button) => {
+    button.addEventListener("click", () => { location.href = "/?intro=1"; });
+  });
+
+  if (intro) {
+    // 展示仅切换固定示例的层级，不写入真实文章、提问或学习进度。
+    intro.addEventListener("click", (event) => {
+      const depthButton = event.target.closest("[data-intro-depth]");
+      if (depthButton) {
+        const depth = depthButton.dataset.introDepth;
+        const panel = intro.querySelector('[data-intro-panel="' + depth + '"]');
+        if (!panel) return;
+        intro.querySelectorAll("[data-intro-panel]").forEach((item) => {
+          item.hidden = item !== panel;
+        });
+        intro.querySelectorAll("[data-intro-level]").forEach((button) => {
+          button.setAttribute("aria-pressed", String(button.dataset.introDepth === depth));
+        });
+        // 返回或深入的按钮随旧面板隐藏时，将焦点交给新面板。
+        if (!depthButton.hasAttribute("data-intro-level")) {
+          panel.tabIndex = -1;
+          panel.focus({ preventScroll: true });
+        }
+      }
+      const anchor = event.target.closest('a[href^="#intro-scene-"]');
+      if (anchor) {
+        const section = $(anchor.getAttribute("href").slice(1));
+        if (!section) return;
+        event.preventDefault();
+        section.scrollIntoView({
+          behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+          block: "start",
+        });
+        section.tabIndex = -1;
+        section.focus({ preventScroll: true });
+      }
+    });
+  }
+
+  let introSeen = false;
+  try { introSeen = Boolean(localStorage.getItem(introKey)); }
+  catch (err) { /* 隐私模式下采用首次访问流程。 */ }
+  if (intro && !directEntry && (entryParams.get("intro") === "1" || !introSeen)) {
+    intro.hidden = false;
+    els.page.hidden = true;
+    document.body.classList.add("intro-active");
+    document.title = "知识蒸馏站 · 围绕文章展开的 AI 精读";
+    intro.focus({ preventScroll: true });
+    if ("IntersectionObserver" in window) {
+      observeIntroScenes();
+      window.addEventListener("resize", observeIntroScenes);
+    } else {
+      intro.querySelectorAll(".intro-scene").forEach((scene) => scene.classList.add("intro-visible"));
+    }
+  } else {
+    enterStation(false);
+  }
 })();

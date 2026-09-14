@@ -7,6 +7,7 @@
 - 不代劳：Bastani et al. PNAS 2025——无约束给答案有负效应；追问只指出断点
 """
 import base64
+import copy
 import json
 import re
 
@@ -15,8 +16,7 @@ import httpx
 from .config import settings
 
 _TIMEOUT = 180.0
-_MODEL = "deepseek-chat"
-# 配图解释要能看图：DeepSeek 的视觉能力在 deepseek-flash 上（见官方 Vision 指南）
+_MODEL = "deepseek-flash"
 _VISION_MODEL = "deepseek-flash"
 _IMG_MAX_BYTES = 8 * 1024 * 1024
 
@@ -60,18 +60,31 @@ def _extract_json(raw: str) -> dict:
     )
 
 
-async def _chat(messages: list, temperature: float = 0.3, max_tokens: int = 2400,
-                json_mode: bool = False, model: str | None = None) -> str:
-    if not settings.DEEPSEEK_API_KEY:
-        raise AIError("DEEPSEEK_API_KEY 未配置。")
+def prepare_chat(messages: list, temperature: float = 0.3, max_tokens: int = 2400,
+                 json_mode: bool = False, model: str | None = None) -> dict:
+    """Build the exact provider request without performing network I/O."""
+    if not isinstance(messages, list) or not messages:
+        raise AIError("模型消息不能为空。")
+    if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0:
+        raise AIError("模型输出上限不合法。")
     payload = {
         "model": model or _MODEL,
-        "messages": messages,
+        "messages": copy.deepcopy(messages),
         "temperature": temperature,
         "max_tokens": max_tokens,
+        # 旧 deepseek-chat 对应非思考模式；改用当前模型名时保持原有交互语义。
+        "thinking": {"type": "disabled"},
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
+    return payload
+
+
+async def execute_chat(prepared: dict) -> dict:
+    """Execute one prepared request and retain the fields required for billing audit."""
+    if not settings.DEEPSEEK_API_KEY:
+        raise AIError("DEEPSEEK_API_KEY 未配置。")
+    payload = copy.deepcopy(prepared)
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT, trust_env=False) as client:
             resp = await client.post(
@@ -85,9 +98,32 @@ async def _chat(messages: list, temperature: float = 0.3, max_tokens: int = 2400
     except httpx.HTTPError as exc:
         raise AIError(f"模型调用失败：{exc}") from exc
     try:
-        return data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        content = choice["message"]["content"]
+        if not isinstance(content, str):
+            raise TypeError("content is not text")
+        usage = data.get("usage")
+        if usage is not None and not isinstance(usage, dict):
+            raise TypeError("usage is not an object")
+        return {
+            "content": content,
+            "response_id": data.get("id"),
+            "returned_model": data.get("model"),
+            "created": data.get("created"),
+            "finish_reason": choice.get("finish_reason"),
+            "usage": copy.deepcopy(usage),
+        }
     except (KeyError, IndexError, TypeError) as exc:
         raise AIError("模型返回结构异常。") from exc
+
+
+async def _chat(messages: list, temperature: float = 0.3, max_tokens: int = 2400,
+                json_mode: bool = False, model: str | None = None) -> str:
+    result = await execute_chat(prepare_chat(
+        messages, temperature=temperature, max_tokens=max_tokens,
+        json_mode=json_mode, model=model,
+    ))
+    return result["content"]
 
 
 def normalize_cuts(raw_cuts, total_len: int, max_chars: int = 1200) -> list:
@@ -266,9 +302,9 @@ async def explain_image(title: str, summary: str, before: str, after: str,
     ], temperature=0.4, max_tokens=1100, model=_VISION_MODEL)).strip()
 
 
-async def explain_segment(title: str, summary: str, segment_text: str,
-                          seg_hint: str = "") -> str:
-    """某段的初始解释（先补共识，再讲这段说什么、在全文的作用）"""
+def prepare_explain_segment(title: str, summary: str, segment_text: str,
+                            seg_hint: str = "") -> dict:
+    """Prepare the exact initial-explanation request without dispatching it."""
     prompt = (
         "用户正在逐段精读一篇知乎文章，现在读到下面这一段。请给出这一段的「初始解释」。\n\n"
         f"全文主旨：{summary or '（未知）'}\n"
@@ -282,14 +318,22 @@ async def explain_segment(title: str, summary: str, segment_text: str,
         "4. 只解释，不替读者下结论，不扩展到原文之外的内容\n"
         + (f"\n补充提示：{seg_hint}" if seg_hint else "")
     )
-    return (await _chat([{"role": "system", "content": _EXPLAIN_SYSTEM},
+    return prepare_chat([{"role": "system", "content": _EXPLAIN_SYSTEM},
                          {"role": "user", "content": prompt}],
-                        temperature=0.4, max_tokens=1200)).strip()
+                        temperature=0.4, max_tokens=1200)
 
 
-async def explain_selection(title: str, summary: str, segment_text: str,
-                            selection: str) -> str:
-    """选区解释（共享）：解释用户划出的这一小段文字"""
+async def explain_segment(title: str, summary: str, segment_text: str,
+                          seg_hint: str = "") -> str:
+    """某段的初始解释（先补共识，再讲这段说什么、在全文的作用）"""
+    return (await execute_chat(
+        prepare_explain_segment(title, summary, segment_text, seg_hint)
+    ))["content"].strip()
+
+
+def prepare_explain_selection(title: str, summary: str, segment_text: str,
+                              selection: str) -> dict:
+    """Prepare an exact selection-explanation request without dispatching it."""
     prompt = (
         "用户正在精读一篇文章，划出了下面这段文字，想要一个解释。\n\n"
         f"全文主旨：{summary or '（未知）'}\n"
@@ -301,14 +345,22 @@ async def explain_selection(title: str, summary: str, segment_text: str,
         "3. 不超过 200 字，平实的中文\n"
         "4. 只解释，不延伸、不替读者下结论"
     )
-    return (await _chat([{"role": "system", "content": _EXPLAIN_SYSTEM},
+    return prepare_chat([{"role": "system", "content": _EXPLAIN_SYSTEM},
                          {"role": "user", "content": prompt}],
-                        temperature=0.4, max_tokens=900)).strip()
+                        temperature=0.4, max_tokens=900)
 
 
-async def answer_question(question: str, summary: str, anchor_text: str,
-                          context_text: str = "") -> str:
-    """私有提问的回答：直接回答；涉及推理的部分只指出断点、不代劳"""
+async def explain_selection(title: str, summary: str, segment_text: str,
+                            selection: str) -> str:
+    """选区解释：解释用户划出的这一小段文字。"""
+    return (await execute_chat(
+        prepare_explain_selection(title, summary, segment_text, selection)
+    ))["content"].strip()
+
+
+def prepare_answer_question(question: str, summary: str, anchor_text: str,
+                            context_text: str = "") -> dict:
+    """Prepare an exact answer request without dispatching it."""
     prompt = (
         "用户正在精读一篇文章，提出了一个问题。\n\n"
         f"全文主旨：{summary or '（未知）'}\n"
@@ -321,9 +373,17 @@ async def answer_question(question: str, summary: str, anchor_text: str,
         "不要在用户没意识到的情况下替他推导完\n"
         "3. 只回答这一个问题，不延伸成一篇讲解；不超过 300 字"
     )
-    return (await _chat([{"role": "system", "content": _EXPLAIN_SYSTEM},
+    return prepare_chat([{"role": "system", "content": _EXPLAIN_SYSTEM},
                          {"role": "user", "content": prompt}],
-                        temperature=0.4, max_tokens=1200)).strip()
+                        temperature=0.4, max_tokens=1200)
+
+
+async def answer_question(question: str, summary: str, anchor_text: str,
+                          context_text: str = "") -> str:
+    """私有提问的回答：直接回答；涉及推理的部分只指出断点、不代劳"""
+    return (await execute_chat(
+        prepare_answer_question(question, summary, anchor_text, context_text)
+    ))["content"].strip()
 
 
 # ---- 自测（读完之后的检测环节） ----

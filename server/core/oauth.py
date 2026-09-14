@@ -18,6 +18,21 @@ def new_state() -> str:
     return secrets.token_urlsafe(24)
 
 
+def profile_uid(profile: dict | None) -> str | None:
+    """Return the stable decimal Zhihu uid used for private data and billing."""
+    raw = (profile or {}).get("uid")
+    if isinstance(raw, bool):
+        return None
+    value = str(raw or "").strip()
+    if not value.isdecimal():
+        return None
+    try:
+        number = int(value)
+        return str(number) if number > 0 else None
+    except ValueError:
+        return None
+
+
 def check_state(returned: str | None, expected: str | None) -> str:
     """回调 state 校验（结果四态，调用方据此决定放行或拒绝）。
 
@@ -86,10 +101,11 @@ async def fetch_profile(oauth_token: str) -> dict:
     if code is not None and code not in (0, 20000):
         raise ZhihuError(code, payload.get("data") or payload.get("message") or "获取用户信息失败。")
     source = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    if not isinstance(source, dict) or not (source.get("uid") or source.get("hash_id")):
-        raise ZhihuError("PROFILE_INVALID", "用户信息响应缺少有效用户标识。")
+    uid = profile_uid(source if isinstance(source, dict) else None)
+    if uid is None:
+        raise ZhihuError("ACCOUNT_ID_REQUIRED", "用户信息响应缺少有效知乎 uid，请重新授权。")
     return {
-        "uid": source.get("uid"),
+        "uid": uid,
         "name": source.get("fullname"),
         "avatar_url": source.get("avatar_path"),
         "headline": source.get("headline"),
@@ -101,7 +117,7 @@ def local_path(raw: str) -> str:
     """把「登录后要落回哪里」限制为站内相对路径，不合法返回空串（避免开放重定向）
 
     只用于 OAuth 流程的落地地址：必须是 / 开头的本机路径，不能是协议相 URL、协议相对 URL，
-    也不能带反斜杠（浏览器会把 \ 当 / 处理，能被绕过）。
+    也不能带反斜杠（浏览器会把反斜杠当作 / 处理，能被绕过）。
     """
     s = str(raw or "").strip()
     if not s.startswith("/") or s.startswith("//") or "\\" in s or "://" in s:

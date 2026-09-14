@@ -2,11 +2,12 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
   <title>精读 · 知识蒸馏站</title>
+  <script src="/bg.js?v=5"></script>
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="/style.css?v=5">
-  <script src="/bg.js?v=2" defer></script>
+  <link rel="stylesheet" href="/style.css?v=12">
   <style>
     /* ===== 精读会话（设计见 docs/学习会话设计-定稿.md） ===== */
     body.reading { padding: 20px; }
@@ -34,7 +35,7 @@
       font-size: 12.5px; font-family: inherit; cursor: pointer; white-space: nowrap;
       transition: color .18s ease, border-color .18s ease, background .18s ease;
     }
-    .rd-refresh-article:hover { color: var(--green); border-color: rgba(47,122,61,.4); background: rgba(47,122,61,.05); }
+    .rd-refresh-article:hover { color: var(--green); border-color: rgba(var(--green-rgb),.4); background: rgba(var(--green-rgb),.05); }
     .rd-refresh-article.confirm { color: #a33; border-color: rgba(170,51,51,.5); font-weight: 700; }
     /* 作者信息（标题下方：头像 + 昵称 + 认证徽章/称号；头像与昵称可点进主页） */
     .rd-author { display: flex; align-items: center; gap: 9px; white-space: nowrap;
@@ -92,7 +93,6 @@
     }
     .rd-pane { min-width: 0; min-height: 0; transition: opacity .3s ease; }
     .rd-pane:not(.rd-side) { display: flex; flex-direction: column; }
-    @media (max-width: 900px) { .rd-body { grid-template-columns: 1fr; } #rd-body-main { height: auto; } }
     .rd-pane-label { font-size: 12px; color: var(--ink-3); font-weight: 700; margin-bottom: 8px; }
     /* 会话卡片内的栏目标签不显示：层级信息由顶部标签栏承担，避免"本段解释/上一层的文本"重复出现 */
     #rd-body-main .rd-pane-label { display: none; }
@@ -109,7 +109,7 @@
       border: 1px solid var(--line); border-radius: 8px;
     }
     .kd-img:hover img { border-color: var(--green); }
-    .kd-img.active img { border-color: var(--green); box-shadow: 0 0 0 2px rgba(47,122,61,.18); }
+    .kd-img.active img { border-color: var(--green); box-shadow: 0 0 0 2px rgba(var(--green-rgb),.18); }
     .kd-img.busy img { opacity: .6; }
     /* 配图被包在标记里时，外层下划线会横贯整行（图片是块级）——去掉它，用底色表示标记 */
     .mk-shared:has(.kd-img), .mk-private:has(.kd-img) { border-bottom: 0; }
@@ -128,13 +128,13 @@
     }
     .rd-fig img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .rd-fig:hover { border-color: var(--green); }
-    .rd-fig.active { border-color: var(--green); box-shadow: 0 0 0 2px rgba(47,122,61,.18); }
+    .rd-fig.active { border-color: var(--green); box-shadow: 0 0 0 2px rgba(var(--green-rgb),.18); }
     .rd-fig.busy { opacity: .55; }
 
     .rd-explain {
       font-size: 14px; line-height: 1.95; color: var(--ink); white-space: pre-wrap;
       border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px;
-      background: rgba(47,122,61,.16); min-height: 120px; overflow-y: auto; overflow-anchor: none;
+      background: rgba(var(--green-rgb),.16); min-height: 120px; overflow-y: auto; overflow-anchor: none;
       display: flex; flex-direction: column; height: 100%;
       flex: 1 1 100%; min-width: 0;
       transition: flex-basis .3s ease, opacity .3s ease, transform .3s ease,
@@ -142,12 +142,27 @@
     }
     #rd-explain-body { flex: 1 1 auto; min-height: 0; }
     .rd-explain .rd-explain-actions { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); display: flex; gap: 8px; }
+    .rd-explain .rd-explain-actions { flex-wrap: wrap; align-items: center; }
+    .rd-advanced-button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12.5px; }
+    .rd-advanced-button small { font-size: 10px; opacity: .7; }
+    .rd-advanced-status { width: 100%; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .rd-answer-body a { color: var(--green); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+    .rd-advanced-button[aria-busy="true"]::before { content: ""; width: 11px; height: 11px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: rd-advanced-spin .8s linear infinite; }
+    @keyframes rd-advanced-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .rd-advanced-button[aria-busy="true"]::before { animation: none; } }
 
     /* 会话卡片：高度跟随视口，解释/回答吃掉剩余空间（对话与提问栏在下方纵向排布） */
     /* 会话卡片：高度跟随视口；第 1 行层级标签、第 3 行换段导航 */
     #rd-body-main { height: calc(100vh - 165px); min-height: 480px;
       grid-template-rows: auto minmax(0, 1fr) auto; }
     #rd-body-main > .rd-pane { grid-row: 2; }
+    @media (max-width: 900px) {
+      .rd-body { grid-template-columns: minmax(0, 1fr); row-gap: 16px; }
+      #rd-body-main { height: auto; grid-template-rows: auto; }
+      #rd-body-main > .rd-pane, .rd-nav-row { grid-row: auto; }
+      .rd-nav-row { flex-wrap: wrap; gap: 8px; }
+      .rd-nav-row .rd-btn { padding-inline: 12px; white-space: nowrap; }
+    }
     .rd-main { display: flex; align-items: stretch; min-width: 0; flex: 1 1 auto; min-height: 200px; }
     .rd-pair { flex: 1 1 100%; display: flex; align-items: stretch; min-width: 0; }
     .rd-answer {
@@ -174,12 +189,12 @@
     .rd-answer-close:hover { color: var(--ink); }
     .rd-answer-body { flex: 1; overflow-y: auto; padding: 8px 14px 14px;
       font-size: 14px; line-height: 1.95; color: var(--ink); white-space: pre-wrap; }
-    /* 标记：共享=实线，私有=虚线；草稿=浏览器选中色 */
+    /* 本人标记：选区解释=实线，提问锚点=虚线；草稿=浏览器选中色 */
     .mk { cursor: pointer; }
-    .mk-shared { border-bottom: 2px solid var(--green); background: rgba(47,122,61,.06); }
+    .mk-shared { border-bottom: 2px solid var(--green); background: rgba(var(--green-rgb),.06); }
     .mk-private { border-bottom: 2px dashed var(--gold); background: rgba(183,134,40,.05); }
-    .mk-active { background: rgba(47,122,61,.16); }
-    .mk-draft { background: rgba(47, 122, 61, .22); }
+    .mk-active { background: rgba(var(--green-rgb),.16); }
+    .mk-draft { background: rgba(var(--green-rgb),.22); }
 
     /* 公式（KaTeX 渲染）：独立成行的公式由 KaTeX 的 .katex-display 居中 */
     .kd-math-block .katex-display { margin: .45em 0; }
@@ -188,7 +203,7 @@
     .mk-private .kd-math:not(.kd-math-block) .katex { border-bottom: 2px dashed var(--gold); }
     /* 独立成行的公式被标记：display 模式下 .katex 是块级，下划线会横贯整行，
        所以改成整行浅底纹——读起来是「这一块被标了」而不是一条分隔线 */
-    .mk-shared:has(.kd-math-block) { border-bottom: 0; background: rgba(47,122,61,.09); }
+    .mk-shared:has(.kd-math-block) { border-bottom: 0; background: rgba(var(--green-rgb),.09); }
     .mk-private:has(.kd-math-block) { border-bottom: 0; background: rgba(183,134,40,.08); }
 
     /* 右栏：这一层的内容（解释或回答）+ 提问栏 */
@@ -224,7 +239,7 @@
     /* ---- 自测 ---- */
     .rd-quiz { max-width: 720px; margin: 0 auto; }
     .rd-quiz-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-    .rd-quiz-progress { flex: 1 1 auto; height: 5px; border-radius: 999px; background: rgba(47,122,61,.12); overflow: hidden; }
+    .rd-quiz-progress { flex: 1 1 auto; height: 5px; border-radius: 999px; background: rgba(var(--green-rgb),.12); overflow: hidden; }
     .rd-quiz-progress i { display: block; height: 100%; background: var(--green); transition: width .3s ease; }
     .rd-quiz-count { font-size: 12px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
     .rd-quiz-card {
@@ -234,12 +249,12 @@
     }
     .rd-quiz-summary {
       font-size: 14.5px; line-height: 1.9; color: var(--ink-2);
-      border-left: 2px solid rgba(47,122,61,.35); padding-left: 14px; margin-bottom: 20px;
+      border-left: 2px solid rgba(var(--green-rgb),.35); padding-left: 14px; margin-bottom: 20px;
     }
     .rd-quiz-tags { display: flex; gap: 8px; margin-bottom: 12px; }
     .rd-quiz-tag {
       font-size: 11.5px; color: var(--green); border: 1px solid var(--line);
-      border-radius: 5px; padding: 1px 8px; background: rgba(47,122,61,.06);
+      border-radius: 5px; padding: 1px 8px; background: rgba(var(--green-rgb),.06);
     }
     .rd-quiz-tag.kind { color: var(--gold); background: rgba(183,134,40,.07); }
     .rd-quiz-stem { font-size: 16.5px; line-height: 1.85; color: var(--ink); margin-bottom: 18px; }
@@ -250,10 +265,10 @@
       color: var(--ink); padding: 12px 15px; cursor: pointer;
       transition: border-color .18s ease, background-color .18s ease;
     }
-    .rd-quiz-opt:hover:not(:disabled) { border-color: #c6d2bf; background: rgba(47,122,61,.05); }
+    .rd-quiz-opt:hover:not(:disabled) { border-color: #c6d2bf; background: rgba(var(--green-rgb),.05); }
     .rd-quiz-opt:disabled { cursor: default; }
     /* 判定结果只用两个字表达，不引入新配色以外的语言 */
-    .rd-quiz-opt.right { border-color: rgba(47,122,61,.55); background: rgba(47,122,61,.10); font-weight: 600; }
+    .rd-quiz-opt.right { border-color: rgba(var(--green-rgb),.55); background: rgba(var(--green-rgb),.10); font-weight: 600; }
     .rd-quiz-opt.wrong { border-color: rgba(163,51,51,.5); background: rgba(163,51,51,.07); }
     .rd-quiz-opt .pick { color: var(--ink-3); margin-right: 8px; font-variant-numeric: tabular-nums; }
     .rd-quiz-verdict { margin-top: 16px; font-size: 14px; font-weight: 700; }
@@ -261,7 +276,7 @@
     .rd-quiz-verdict.wrong { color: #a33; }
     .rd-quiz-explain {
       margin-top: 10px; font-size: 14px; line-height: 1.9; color: var(--ink);
-      background: rgba(47,122,61,.055); border: 1px solid var(--line);
+      background: rgba(var(--green-rgb),.055); border: 1px solid var(--line);
       border-radius: 8px; padding: 14px 16px; white-space: pre-wrap;
     }
     .rd-quiz-foot { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
@@ -285,13 +300,57 @@
       font-size: 15.5px; line-height: 2; color: var(--ink); white-space: pre-wrap;
     }
     .rd-review-wait { font-size: 14px; color: var(--ink-2); line-height: 1.9; }
+    @media (max-width: 900px) {
+      #rd-body-main .rd-pane-label { display: block; }
+      .rd-pair { display: block; }
+      .rd-explain { height: auto; }
+      .rd-answer { display: none; width: 100%; height: auto; }
+      .rd-side.covered .rd-explain { display: none; }
+      .rd-side.covered .rd-answer { display: flex; min-height: 160px; }
+      .rd-text { flex: 0 1 auto; min-height: 160px; max-height: 60svh; }
+      .rd-figs { max-height: 180px; }
+      .rd-seg-menu { max-height: 45svh; overflow-y: auto; }
+      .rd-seg-item { width: 44px; height: 44px; }
+      .rd-answer-close { min-width: 44px; min-height: 44px; }
+      .rd-author { white-space: normal; flex-wrap: wrap; font-size: 14px; }
+      .rd-author-link { min-width: 0; max-width: 100%; }
+      #rd-author-name { overflow-wrap: anywhere; }
+      .rd-author .rd-author-title { font-size: 12px; }
+      .rd-text, .rd-explain, .rd-answer-body, .rd-quiz-opt, .rd-quiz-stem, .rd-review-text { overflow-wrap: anywhere; }
+      .kd-math-block { max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+    }
+    @media (max-width: 720px) {
+      body.reading { padding: 12px 8px calc(90px + env(safe-area-inset-bottom)); }
+      .reading .content { padding: 16px 12px 24px; }
+      .rd-head { gap: 10px; align-items: flex-start; margin-bottom: 14px; }
+      .rd-head h1 { font-size: 22px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+      .rd-refresh-article { min-height: 44px; padding: 8px; font-size: 12px; }
+      .rd-body { padding: 12px; }
+      .rd-text { padding: 10px; }
+      .rd-explain { padding: 12px; font-size: 15px; }
+      .rd-input-row input { font-size: 16px; min-height: 44px; padding-inline: 10px; }
+      .rd-btn, .rd-seg-btn, .rd-tab { min-height: 44px; }
+      .rd-btn { padding: 10px 14px; }
+      .rd-tabs { gap: 6px; margin-bottom: 0; }
+      .rd-tab { max-width: 100%; }
+      .rd-nav-row { margin-top: 0; }
+      .rd-seg-btn { padding-inline: 12px; }
+      .rd-nav { flex-wrap: wrap; }
+      .rd-quiz-card, .rd-review-card { padding: 18px 14px; }
+      .rd-quiz-opt { padding: 12px; font-size: 15px; }
+      .rd-quiz-stem { font-size: 16px; }
+      .rd-review-text { font-size: 16px; line-height: 1.95; }
+      .rd-done, .rd-quiz-end { padding: 28px 8px; }
+      .rd-fork .rd-btn { flex: 1 1 120px; }
+      .rd-quiz-foot { flex-wrap: wrap; }
+    }
   </style>
 </head>
 <body class="reading">
   <canvas id="bg-canvas" aria-hidden="true"></canvas>
   <div class="page" id="page">
     <!-- 侧边栏（与首页一致） -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="app-sidebar" aria-label="站点导航">
       <div class="sidebar-inner">
         <div class="brand-row">
           <span class="brand-mark" aria-hidden="true">
@@ -345,10 +404,16 @@
           </div>
         </nav>
 
+        <div class="sidebar-tools">
+        <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20.4 13.1A8.5 8.5 0 0 1 10.9 3.6a8.5 8.5 0 1 0 9.5 9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          <span>夜间模式</span><span class="theme-track" aria-hidden="true"></span>
+        </button>
         <button class="tutorial-replay" type="button" data-tutorial-start="reading-basics">
           <span class="tutorial-help-icon" aria-hidden="true">?</span>
           <span>精读引导</span>
         </button>
+        </div>
         <div class="user-block" id="user-block">
           <span class="nav-avatar" id="user-avatar">·</span>
           <div class="user-meta">
@@ -404,7 +469,9 @@
               <div class="rd-explain" id="rd-explain">
                 <div id="rd-explain-body"></div>
                 <div class="rd-explain-actions">
+                  <button class="rd-btn ghost rd-advanced-button" id="rd-advanced" type="button" title="查阅引用资料，进一步解释当前内容">高级解释 <small>会员</small></button>
                   <button class="rd-btn ghost" id="rd-del" style="padding:5px 14px;font-size:12.5px">删除这条解释</button>
+                  <div class="rd-advanced-status" id="rd-advanced-status" role="status" aria-live="polite" hidden></div>
                 </div>
               </div>
               <!-- 回答：出现时替换本层解释的位置（层内提问则解释左移） -->
@@ -420,7 +487,7 @@
           <!-- 提问栏：贴右栏下侧 -->
           <div class="rd-ask-area" id="rd-ask-area">
             <div class="rd-input-row">
-              <input id="rd-question" placeholder="划选文字生成共享解释；或直接打字提问" autocomplete="off">
+              <input id="rd-question" placeholder="划选文字生成你的解释；或直接打字提问" autocomplete="off">
               <button class="rd-btn" id="rd-ask">提问</button>
             </div>
             <div class="rd-error" id="rd-ask-error"></div>
@@ -496,20 +563,27 @@
     </main>
   </div>
 
+  <button class="mobile-nav-toggle" type="button" aria-label="打开导航">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    <span>导航</span>
+  </button>
+  <button class="theme-toggle theme-floating" type="button" data-theme-toggle aria-pressed="false" aria-label="夜间模式">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20.4 13.1A8.5 8.5 0 0 1 10.9 3.6a8.5 8.5 0 1 0 9.5 9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+  </button>
   <button class="tutorial-mobile-replay" type="button" data-tutorial-start="reading-basics" aria-label="打开精读引导">?</button>
 
   <!-- 公式渲染：KaTeX 本地化（server/static/vendor/katex）+ 识别与偏移映射（math.js） -->
   <script src="/vendor/katex/katex.min.js"></script>
   <script src="/math.js?v=2"></script>
-  <script src="/tutorial.js?v=1"></script>
+  <script src="/tutorial.js?v=2"></script>
   <script>
     (() => {
       "use strict";
       const $ = (id) => document.getElementById(id);
       const state = {
         url: "", article: null, seg: null,
-        marks: [],        // 当前展示文本上的标记（共享 explain / 私有 ask 锚点）
-        segNodes: [],     // 本段可见节点（共享 init/explain + 自己的 ask）
+        marks: [],        // 当前展示文本上的本人标记（explain / ask 锚点）
+        segNodes: [],     // 本段当前账号可见节点（本人 init/explain/ask）
         tabs: [],         // 层级标签：[{nodeId, label, text, marks, explain, isRoot}]
         rootMarks: [],    // 本段的标记（回到根层时用）
         prefetch: {},     // 预加载：segIndex -> 段数据
@@ -711,9 +785,9 @@
         });
         container.querySelectorAll(".mk").forEach((el) => {
           el.addEventListener("click", () => {
-            const id = Number(el.getAttribute("data-node"));
+            const id = el.getAttribute("data-node");
             if (!id) return;
-            openExplainTab(id);   // 实线（共享解释）与虚线（私有提问）统一：点击即进入该层
+            openExplainTab(id);   // 实线（选区解释）与虚线（提问）统一：点击即进入本人该层
           });
         });
         container.querySelectorAll(".kd-img").forEach((el) => {
@@ -728,6 +802,36 @@
         state.answerNodeId = null;
       }
 
+      function linkReadingSources(container) {
+        // Keep URL text unchanged so existing selection offsets still work.
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+        const texts = [];
+        while (walker.nextNode()) {
+          if (!walker.currentNode.parentElement.closest("a, .kd-math")) texts.push(walker.currentNode);
+        }
+        for (const node of texts) {
+          const re = /https?:\/\/[^\s<>"\u3000-\u303f\uff00-\uffef]+/g;
+          let match, cursor = 0;
+          const fragment = document.createDocumentFragment();
+          while ((match = re.exec(node.textContent))) {
+            const raw = match[0].replace(/[)\].,;]+$/, "");
+            let url;
+            try { url = new URL(raw); } catch (_) { continue; }
+            if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) continue;
+            fragment.append(document.createTextNode(node.textContent.slice(cursor, match.index)));
+            const link = document.createElement("a");
+            link.href = url.href; link.textContent = raw;
+            link.target = "_blank"; link.rel = "noopener noreferrer";
+            fragment.append(link);
+            cursor = match.index + raw.length;
+          }
+          if (cursor) {
+            fragment.append(document.createTextNode(node.textContent.slice(cursor)));
+            node.replaceWith(fragment);
+          }
+        }
+      }
+
       // 回答出现：右栏的本层内容（解释）让位，回答占满
       function showAnswer(question, answer, nodeId) {
         const side = $("rd-side");
@@ -735,6 +839,7 @@
         state.answerNodeId = nodeId || null;
         KDM.renderMathInto($("rd-answer-q"), question || "");
         KDM.renderMathInto($("rd-answer-body"), answer || "");
+        linkReadingSources($("rd-answer-body"));
         const label = $("rd-right-label");
         if (label) label.textContent = "回答";
         side.classList.remove("covered");
@@ -825,6 +930,11 @@
                               start: state.draft.start, end: state.draft.end });
         }
         renderText($("rd-explain-body"), explainText, explainMarks);
+        if (tab.isRoot && !tab.nodeId) {
+          $("rd-explain-body").innerHTML = '<button type="button" class="rd-btn" id="rd-generate-init">生成本段解释</button>'
+            + '<p class="muted">按模型实际使用的 Token 扣积分，提交前显示最多冻结额度。</p>';
+          $("rd-generate-init").addEventListener("click", generateInitialExplain);
+        }
         // 恢复滚动位置（DOM 重建后；下一帧再校正一次，防止布局抖动影响）
         textEl.scrollTop = keepText;
         if (explainBox) explainBox.scrollTop = keepExplain;
@@ -834,7 +944,7 @@
         });
         const del = $("rd-del");
         if (del) {
-          del.hidden = Boolean(tab.isRoot) || !tab.nodeId;   // 初始解释固定不变；回答层无独立解释节点
+          del.hidden = Boolean(tab.isRoot) || !tab.nodeId;   // 初始解释走独立重新生成；回答层无独立解释节点
           del.onclick = () => deleteNode(tab.nodeId);
         }
         $("rd-done").textContent = tab.isRoot
@@ -955,12 +1065,14 @@
         }
       }
 
-      // 预加载：进入本段后，后台静默生成下一段的初始解释（服务端按段懒生成 + 缓存）
+      // 预加载：进入本段后，后台静默生成本人下一段初始解释（同账号缓存可复用）
       function preloadSegment(n) {
         if (n < 0 || !state.article || n >= state.article.total) return;
         if (state.prefetch[n]) return;
         const gen = articleGen;   // 换文章后丢弃旧结果
-        api("/api/reading/segment?url=" + encodeURIComponent(state.url) + "&seg=" + n)
+        api("/api/reading/segment?url=" + encodeURIComponent(state.url)
+            + "&version=" + encodeURIComponent((state.article && state.article.version) || "")
+            + "&seg=" + n)
           .then((data) => {
             if (gen !== articleGen) return;
             // 仅在尚未到达该段时缓存（防止过期数据覆盖当前段）
@@ -1025,7 +1137,7 @@
       // 文章代次：切换文章后自增，旧的异步请求返回时直接丢弃（避免覆盖新文章）
       let articleGen = 0;
 
-      async function openArticle(url, startSeg) {
+      async function openArticle(url, startSeg, version, segmentId) {
         const gen = ++articleGen;
         state.prefetch = {};   // 换文章：清空上一批预加载的段落
         $("rd-start").hidden = false;
@@ -1037,11 +1149,12 @@
         $("rd-start-actions").hidden = true;
         $("rd-open").hidden = false;
         $("rd-open").disabled = true;
-        $("rd-open").onclick = () => openArticle(url, startSeg);
+        $("rd-open").onclick = () => openArticle(url, startSeg, version, segmentId);
         try {
           const data = await api("/api/reading/open", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url }),
+            body: JSON.stringify({ url, version: version || undefined,
+                                   segment_id: segmentId || undefined }),
           });
           if (gen !== articleGen) return;   // 期间又切换了文章：丢弃本次结果
           state.url = url;
@@ -1052,9 +1165,10 @@
           loadAuthor(url, data.article.title || "", data.article.author);
           $("rd-start").hidden = true; $("rd-session").hidden = false;
           renderSegment(data.segment);
+          resumePendingOperation();
           loadHistoryList(true);   // 侧边栏学习记录：强制刷新以更新进度与高亮
           // 学习记录恢复：跳到上次读到的段落
-          const target = Number(startSeg) || 0;
+          const target = segmentId ? 0 : (Number(startSeg) || 0);
           if (target > 0 && target < (data.article.total || 0)) goSegment(target);
         } catch (err) {
           if (gen !== articleGen) return;   // 期间已切换文章：不显示旧错误
@@ -1113,7 +1227,9 @@
         $("rd-nav-hint").hidden = false;
         $("rd-prev").disabled = $("rd-done").disabled = true;
         try {
-          const data = await api("/api/reading/segment?url=" + encodeURIComponent(state.url) + "&seg=" + n);
+          const data = await api("/api/reading/segment?url=" + encodeURIComponent(state.url)
+                                 + "&version=" + encodeURIComponent(state.article.version || "")
+                                 + "&seg=" + n);
           if (gen !== articleGen) return;   // 已切换文章：丢弃
           renderSegment(data.segment);
         } catch (err) {
@@ -1121,6 +1237,158 @@
         } finally {
           $("rd-nav-hint").hidden = true;
           $("rd-done").disabled = false;
+        }
+      }
+
+      function newIdempotencyKey() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0;
+          return (c === "x" ? r : (r & 3 | 8)).toString(16);
+        });
+      }
+
+      async function waitForOperation(operationId) {
+        const failed = new Set(["quote_expired", "waived_not_dispatched",
+                                "waived_failure", "waived_unknown"]);
+        for (;;) {
+          const row = await api("/api/reading/operations/" + encodeURIComponent(operationId));
+          if (row.status === "settled" || row.status === "cache_hit") return row;
+          if (failed.has(row.status)) {
+            const err = new Error(row.error_code || "生成没有完成，冻结额度已退回。");
+            err.code = row.error_code || row.status;
+            throw err;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+
+      async function runBilledGeneration(action, body) {
+        const scope = { url: state.url, version: state.article.version,
+                        segment_id: state.seg.segment_id };
+        const quote = await api("/api/reading/quote", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(Object.assign({
+            action, ...scope,
+            idempotency_key: newIdempotencyKey(),
+          }, body || {})),
+        });
+        let operation = quote;
+        if (quote.status !== "cache_hit") {
+        if (!window.confirm("本次最多冻结 " + quote.quoted_points
+            + " 积分，完成后只按实际 Token 扣除，多余冻结立即退回。是否继续？")) {
+          const err = new Error("已取消生成。"); err.code = "USER_CANCELLED"; throw err;
+        }
+        const endpoint = action === "init" ? "/api/reading/init"
+          : action === "advanced" ? "/api/reading/advanced"
+          : (action === "explain" ? "/api/reading/selection" : "/api/reading/ask");
+        const accepted = await api(endpoint, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ operation_id: quote.operation_id }),
+        });
+        const operationId = accepted.operation_id || quote.operation_id;
+        localStorage.setItem("kd_pending_operation_v1", JSON.stringify({
+          operation_id: operationId, ...scope,
+        }));
+        operation = await waitForOperation(operationId);
+        localStorage.removeItem("kd_pending_operation_v1");
+        }
+        const segment = await api("/api/reading/segment?url=" + encodeURIComponent(scope.url)
+          + "&version=" + encodeURIComponent(scope.version || "")
+          + "&segment_id=" + encodeURIComponent(scope.segment_id || ""));
+        const node = (segment.segment.nodes || []).find((item) =>
+          String(item.id) === String(operation.result_node_id));
+        return { operation, node: node || null, segment: segment.segment };
+      }
+      window.KDRunBilledGeneration = runBilledGeneration;
+
+      async function resumePendingOperation() {
+        let pending;
+        try { pending = JSON.parse(localStorage.getItem("kd_pending_operation_v1") || "null"); }
+        catch (_) { localStorage.removeItem("kd_pending_operation_v1"); return; }
+        if (!pending || pending.url !== state.url || pending.version !== state.article.version
+            || pending.segment_id !== state.seg.segment_id) return;
+        try {
+          await waitForOperation(pending.operation_id);
+          localStorage.removeItem("kd_pending_operation_v1");
+          await reloadCurrentSegment();
+          $("rd-ask-error").textContent = "上次的生成任务已经完成。";
+        } catch (err) {
+          localStorage.removeItem("kd_pending_operation_v1");
+          $("rd-ask-error").textContent = err.message;
+        }
+      }
+
+      async function submitAdvanced() {
+        const button = $("rd-advanced");
+        const status = $("rd-advanced-status");
+        if (button.disabled || !state.seg || !state.article) return;
+        const tab = state.tabs[state.tabs.length - 1];
+        if (!tab || !tab.nodeId) {
+          status.hidden = false; status.textContent = "请先生成本段解释，再使用高级解释。";
+          return;
+        }
+        const scope = [state.url, state.article.version, state.seg.segment_id, tab.nodeId];
+        const unchanged = () => scope.every((value, index) => value ===
+          [state.url, state.article && state.article.version, state.seg && state.seg.segment_id,
+           state.tabs[state.tabs.length - 1] && state.tabs[state.tabs.length - 1].nodeId][index]);
+        const body = { parent_id: tab.nodeId, question: $("rd-question").value.trim() };
+        const leftSelection = selectionOffsets($("rd-text"));
+        if (leftSelection) {
+          const selected = (tab.text || "").slice(leftSelection.start, leftSelection.end);
+          body.question = (body.question || "请深入解释以下原文选区。") + "\n选区：" + selected;
+        }
+        // A selection inside the explanation is relative to its parent node text.
+        const draft = state.draft;
+        if (draft && draft.scope === "explain" && draft.start < draft.end) {
+          body.pos_start = Array.from((tab.explain || "").slice(0, draft.start)).length;
+          body.pos_end = Array.from((tab.explain || "").slice(0, draft.end)).length;
+        }
+        button.disabled = true; button.setAttribute("aria-busy", "true");
+        status.hidden = false; status.textContent = "正在核验会员权限与本次额度…";
+        const progress = setTimeout(() => {
+          if (unchanged()) status.textContent = "正在查阅引用资料并整理解释，通常需要几十秒…";
+        }, 2500);
+        try {
+          const data = await runBilledGeneration("advanced", body);
+          if (!unchanged()) return;
+          if (!data.node) throw new Error("高级解释已生成，但暂时无法读取结果，请刷新本段。");
+          if (!findNode(data.node.id)) state.segNodes.push(data.node);
+          state.draft = null;
+          const usage = data.operation.status === "cache_hit" ? "已保存的解释 · 不重复扣费"
+            : "本次使用 " + Number(data.operation.usage_tokens || 0).toLocaleString("zh-CN") + " 积分";
+          showAnswer("高级解释 · " + usage, data.node.content || "", data.node.id);
+          $("rd-right-label").textContent = "高级解释";
+          status.textContent = "高级解释已完成，本次使用 "
+            + Number(data.operation.usage_tokens || 0).toLocaleString("zh-CN") + " 积分。";
+        } catch (err) {
+          if (unchanged()) status.textContent = err.code === "USER_CANCELLED"
+            ? "已取消，未扣积分。" : err.message;
+        } finally {
+          clearTimeout(progress);
+          button.disabled = false; button.removeAttribute("aria-busy");
+          if (!unchanged()) status.hidden = true;
+        }
+      }
+      $("rd-advanced").addEventListener("click", submitAdvanced);
+
+      async function reloadCurrentSegment() {
+        const data = await api("/api/reading/segment?url=" + encodeURIComponent(state.url)
+          + "&version=" + encodeURIComponent(state.article.version || "")
+          + "&segment_id=" + encodeURIComponent(state.seg.segment_id || ""));
+        renderSegment(data.segment);
+        return data.segment;
+      }
+
+      async function generateInitialExplain() {
+        const button = $("rd-generate-init");
+        if (button) { button.disabled = true; button.textContent = "生成中…"; }
+        try {
+          await runBilledGeneration("init", {});
+          await reloadCurrentSegment();
+        } catch (err) {
+          if (err.code !== "USER_CANCELLED") $("rd-ask-error").textContent = err.message;
+          renderActiveTab();
         }
       }
 
@@ -1141,16 +1409,14 @@
         $("rd-ask").disabled = true; $("rd-ask").textContent = "生成中…";
         try {
           if (!question && (offsets || explainDraft)) {
-            // 纯选中 = 共享选区解释：左栏文字锚在上一层内容上，右栏解释文字锚在本层内容上
+            // 纯选中 = 本人选区解释：左栏文字锚在上一层内容上，右栏解释文字锚在本层内容上
             const sel = offsets || explainDraft;
             const body = { url: state.url, seg: state.seg.index,
                            pos_start: sel.start, pos_end: sel.end };
             const anchorId = offsets ? leftAnchorId : (tab ? tab.nodeId : null);
             if (anchorId != null) body.parent_id = anchorId;
-            const data = await api("/api/reading/selection", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            });
+            const data = await runBilledGeneration("explain", body);
+            if (!data.node) throw new Error("解释已生成，但暂时无法读取结果。");
             state.draft = null;
             state.segNodes.push(data.node);
             refreshMarks(tab);
@@ -1170,10 +1436,8 @@
             } else if (tab && !tab.isRoot && tab.nodeId) {  // 无选区：挂在当前层内容节点上
               body.parent_id = tab.nodeId;
             }
-            const data = await api("/api/reading/ask", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            });
+            const data = await runBilledGeneration("ask", body);
+            if (!data.node) throw new Error("回答已生成，但暂时无法读取结果。");
             state.segNodes.push(data.node);
             state.draft = null;
             if (explainDraft) {
@@ -1231,11 +1495,14 @@
         const btnReset = $("rd-del");
         if (btnReset) btnReset.textContent = "删除这条解释";
         try {
-          await api("/api/reading/node/" + nodeId + "?url=" + encodeURIComponent(state.url),
+          await api("/api/reading/node/" + nodeId + "?url=" + encodeURIComponent(state.url)
+                    + "&version=" + encodeURIComponent(state.article.version || "")
+                    + "&segment_id=" + encodeURIComponent(state.seg.segment_id || ""),
                     { method: "DELETE" });
           // 重新载入本段：标记、解释、层栈全部回到一致状态（下划线随之消失）
           const data = await api("/api/reading/segment?url=" + encodeURIComponent(state.url)
-                                 + "&seg=" + state.seg.index);
+                                 + "&version=" + encodeURIComponent(state.article.version || "")
+                                 + "&segment_id=" + encodeURIComponent(state.seg.segment_id || ""));
           renderSegment(data.segment);
         } catch (err) {
           $("rd-ask-error").textContent = "删除失败：" + err.message;
@@ -1245,7 +1512,8 @@
       function logEvent(event, segIndex, nodeId) {
         fetch("/api/reading/event", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: state.url, event: event,
+          body: JSON.stringify({ url: state.url, version: state.article && state.article.version,
+                                 segment_id: state.seg && state.seg.segment_id, event: event,
                                  seg_index: segIndex, node_id: nodeId }),
         }).catch(() => {});
       }
@@ -1521,44 +1789,17 @@
         });
       }
 
-      // 更新文章：清空旧解析与笔记 → 打开知乎原文，点书签重新保存（保存后自动跳回并开读）
+      // 更新文章：打开知乎原文重新采集；服务端创建新版本并保留旧版本与本人解释。
       (function initRefreshArticle() {
         const btn = $("rd-refresh-article");
         if (!btn) return;
-        let pending = false, timer = null;
-        const reset = () => {
-          pending = false;
-          btn.classList.remove("confirm");
-          btn.disabled = false;
-          btn.textContent = "更新文章";
-        };
-        btn.addEventListener("click", async () => {
+        btn.addEventListener("click", () => {
           if (!state.url) return;
-          if (!pending) {   // 第一次点击进入确认态（原生 confirm 可能被宿主屏蔽，沿用两次点击确认）
-            pending = true;
-            btn.classList.add("confirm");
-            btn.textContent = "再点一次确认更新";
-            timer = setTimeout(reset, 4000);
-            return;
-          }
-          clearTimeout(timer);
-          btn.classList.remove("confirm");
-          pending = false;
-          btn.disabled = true;
-          btn.textContent = "清空中…";
-          try {
-            const res = await fetch("/api/distilled?url=" + encodeURIComponent(state.url), { method: "DELETE" });
-            const data = await res.json();
-            if (!data.ok) throw new Error((data.error && data.error.message) || "清空失败");
-            window.open(state.url.split("#")[0] + "#kd=1", "_blank");
-            btn.textContent = "已清空 · 去知乎点书签";
-            $("rd-ask-error").textContent =
-              "已清空本篇的解析与笔记。请在打开的知乎页面点一下书签「🧪 保存这篇文章」，保存后会跳回来并重新开读。";
-            setTimeout(reset, 6000);
-          } catch (err) {
-            reset();
-            $("rd-ask-error").textContent = "更新失败：" + (err.message || "未知错误");
-          }
+          window.open(state.url.split("#")[0] + "#kd=1", "_blank", "noopener");
+          btn.textContent = "已打开知乎原文";
+          $("rd-ask-error").textContent =
+            "请在打开的知乎页面使用新版保存工具。新内容会成为一个版本，旧版本和你的已有解释都会保留。";
+          setTimeout(() => { btn.textContent = "更新文章"; }, 5000);
         });
       })();
 
@@ -1577,7 +1818,10 @@
         }
         const curKey = histNormKey(state.url);
         sub.innerHTML = items.map((it) => {
-          const href = "/reading.html?url=" + encodeURIComponent(it.url) + "&seg=" + (it.seg || 0);
+          const href = "/reading.html?url=" + encodeURIComponent(it.url)
+            + "&version=" + encodeURIComponent(it.version || "")
+            + "&segment_id=" + encodeURIComponent(it.segment_id || "")
+            + "&seg=" + (it.seg || 0);
           const label = it.total > 1 ? ((it.seg || 0) + 1) + "/" + it.total : "";
           const active = histNormKey(it.url) === curKey ? " active" : "";   // 当前打开的文章高亮
           return '<div class="nav-subrow">'
@@ -1586,7 +1830,7 @@
             + (label ? '<span class="sub-count">' + label + '</span>' : "")
             + '</a>'
             + '<button type="button" class="nav-subdel" data-del="' + esc(it.url || "") + '"'
-            + ' title="删除这条学习记录，并把这篇重置为未保存全文" aria-label="删除这条学习记录">×</button>'
+            + ' title="删除这条学习记录" aria-label="删除这条学习记录">×</button>'
             + "</div>";
         }).join("");
       }
@@ -1612,8 +1856,6 @@
         btn.disabled = true;
         try {
           await api("/api/reading/history?url=" + encodeURIComponent(url), { method: "DELETE" });
-          // 删的正是手上这篇：全文已被重置，这个会话没法继续，回起始页重新选一篇
-          if (histNormKey(url) === histNormKey(state.url)) { location.href = "/reading.html"; return; }
           histCache = (histCache || []).filter((it) => it.url !== url);
           renderHistList(histCache);
         } catch (err) {
@@ -1695,17 +1937,19 @@
             const a = e.target.closest("a.nav-subitem");
             if (!a) return;
             e.preventDefault();
-            let targetUrl = "", targetSeg = 0;
+            let targetUrl = "", targetSeg = 0, targetVersion = "", targetSegmentId = "";
             try {
               const pu = new URL(a.href, location.origin);
               targetUrl = pu.searchParams.get("url") || "";
               targetSeg = Number(pu.searchParams.get("seg")) || 0;
+              targetVersion = pu.searchParams.get("version") || "";
+              targetSegmentId = pu.searchParams.get("segment_id") || "";
             } catch (err) { location.href = a.href; return; }
             history.replaceState(null, "", a.getAttribute("href"));
             if ($("rd-start").hidden && histNormKey(targetUrl) === histNormKey(state.url)) {
               goSegment(targetSeg);                  // 同一篇：直接跳到记录的那一段
             } else {
-              openArticle(targetUrl, targetSeg);     // 换一篇：原地打开
+              openArticle(targetUrl, targetSeg, targetVersion, targetSegmentId); // 换一篇：原地打开
             }
             renderHistList(histCache || []);         // 立即更新高亮
           });
@@ -1718,6 +1962,12 @@
             name.textContent = (s.profile && s.profile.name) || "已登录";
             sub.textContent = "知乎账号已连接";
             if (sub && s.profile && s.profile.avatar_url && av) av.innerHTML = '<img src="' + s.profile.avatar_url + '" alt="">';
+            api("/api/billing/account").then((data) => {
+              const account = data.account || {};
+              const tier = account.membership_tier === "premium" ? "高级会员" : "普通用户";
+              sub.textContent = tier + " · 本周期剩余 "
+                + Number(account.daily_available_tokens || 0).toLocaleString("zh-CN") + " Token";
+            }).catch(() => {});
           } else if (s.self_mode) {
             name.textContent = "本人模式";
             sub.textContent = "本地预览 · 未登录";
@@ -1728,8 +1978,10 @@
       const params = new URLSearchParams(location.search);
       const preset = params.get("url");
       const startSeg = parseInt(params.get("seg") || "0", 10) || 0;
+      const startVersion = params.get("version") || "";
+      const startSegmentId = params.get("segment_id") || "";
       if (preset) {
-        openArticle(preset, startSeg);
+        openArticle(preset, startSeg, startVersion, startSegmentId);
       } else {
         $("rd-spinner").hidden = true;
         $("rd-loading").textContent = "请从收藏夹或学习记录中选择一篇文章。";

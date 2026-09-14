@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """OAuth state 校验逻辑测试（四态：missing / mismatch / verified / unverified）"""
-from core.oauth import check_state
+from core.oauth import check_state, profile_uid
 
 STATE = "a-secure-random-state"
 
@@ -38,3 +38,11 @@ def test_local_path_only_accepts_site_relative_paths():
                 "javascript:alert(1)", "", None, "reading.html"):
         assert local_path(bad) == "", f"不应接受：{bad!r}"
     assert len(local_path("/" + "a" * 500)) == 300
+
+
+def test_profile_uid_requires_positive_decimal_uid():
+    assert profile_uid({"uid": 1234567890123456789}) == "1234567890123456789"
+    assert profile_uid({"uid": "00042"}) == "42"
+    for profile in (None, {}, {"hash_id": "legacy"}, {"uid": 0}, {"uid": -1},
+                    {"uid": True}, {"uid": "12.3"}, {"uid": ""}):
+        assert profile_uid(profile) is None
