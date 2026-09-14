@@ -57,6 +57,7 @@
   let distilledMap = {};      // 已保存内容索引：url(去参) -> {title, length, at}
 
   // ---- 保存书签（动态生成：写入当前站点域名；带 #kd=1 来源标记的页面蒸完自动跳回） ----
+  const BOOKMARKLET_VERSION = "v3（2026-09-14）";   // 书签逻辑一改就 +1：用户能确认自己装的是哪一版
   function buildBookmarklet() {
     const origin = window.location.origin;
     return [
@@ -121,6 +122,9 @@
     const code = buildBookmarklet();
     if (els.homeBookmarklet) els.homeBookmarklet.setAttribute("href", code);
     if (els.homeBookmarkletCode) els.homeBookmarkletCode.value = code;
+    // 版本标签：书签代码是拖的那一刻生成的，页面没刷新就会拖到旧代码——有个版本号好确认
+    const ver = $("bookmarklet-version");
+    if (ver) ver.textContent = "书签版本 " + BOOKMARKLET_VERSION + "（先刷新本页再拖，才会装上当前版本）";
   }
 
   // ---- 视图切换：首页 / 我的收藏 ----
