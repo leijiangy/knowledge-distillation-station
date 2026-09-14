@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>精读 · 知识蒸馏站</title>
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="/style.css">
-  <script src="/bg.js" defer></script>
+  <link rel="stylesheet" href="/style.css?v=2">
+  <script src="/bg.js?v=2" defer></script>
   <style>
     /* ===== 精读会话（设计见 docs/学习会话设计-定稿.md） ===== */
     body.reading { padding: 20px; }
@@ -21,6 +21,15 @@
     .rd-head h1 { font-size: 32px; line-height: 1.25; font-weight: 700; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap; }
     .rd-title-link:hover h1 { color: var(--green); }
+    /* 更新文章：右上角（清空旧解析 → 去知乎页面用书签重新保存） */
+    .rd-refresh-article {
+      flex: 0 0 auto; border: 1px solid var(--line); background: transparent;
+      color: var(--ink-3); border-radius: 8px; padding: 6px 12px;
+      font-size: 12.5px; font-family: inherit; cursor: pointer; white-space: nowrap;
+      transition: color .18s ease, border-color .18s ease, background .18s ease;
+    }
+    .rd-refresh-article:hover { color: var(--green); border-color: rgba(47,122,61,.4); background: rgba(47,122,61,.05); }
+    .rd-refresh-article.confirm { color: #a33; border-color: rgba(170,51,51,.5); font-weight: 700; }
     /* 作者信息（标题下方：头像 + 昵称 + 认证徽章/称号；头像与昵称可点进主页） */
     .rd-author { display: flex; align-items: center; gap: 9px; white-space: nowrap;
       font-size: 19px; color: var(--ink-2); margin: 0 2px 12px; }
@@ -271,6 +280,8 @@
       <a class="rd-title-link" id="rd-title-link" href="#" target="_blank" rel="noopener">
         <h1 id="rd-title">精读</h1>
       </a>
+      <button class="rd-refresh-article" id="rd-refresh-article"
+              title="内容抓错了？清空后到知乎页面用书签重新保存">更新文章</button>
     </div>
     <div class="rd-author" id="rd-author" hidden>
       <a class="rd-author-link" id="rd-author-link" href="#" target="_blank" rel="noopener">
@@ -355,7 +366,7 @@
 
   <!-- 公式渲染：KaTeX 本地化（server/static/vendor/katex）+ 识别与偏移映射（math.js） -->
   <script src="/vendor/katex/katex.min.js"></script>
-  <script src="/math.js"></script>
+  <script src="/math.js?v=2"></script>
   <script>
     (() => {
       "use strict";
@@ -1091,6 +1102,47 @@
           if (fig) explainFigure(fig);
         });
       }
+
+      // 更新文章：清空旧解析与笔记 → 打开知乎原文，点书签重新保存（保存后自动跳回并开读）
+      (function initRefreshArticle() {
+        const btn = $("rd-refresh-article");
+        if (!btn) return;
+        let pending = false, timer = null;
+        const reset = () => {
+          pending = false;
+          btn.classList.remove("confirm");
+          btn.disabled = false;
+          btn.textContent = "更新文章";
+        };
+        btn.addEventListener("click", async () => {
+          if (!state.url) return;
+          if (!pending) {   // 第一次点击进入确认态（原生 confirm 可能被宿主屏蔽，沿用两次点击确认）
+            pending = true;
+            btn.classList.add("confirm");
+            btn.textContent = "再点一次确认更新";
+            timer = setTimeout(reset, 4000);
+            return;
+          }
+          clearTimeout(timer);
+          btn.classList.remove("confirm");
+          pending = false;
+          btn.disabled = true;
+          btn.textContent = "清空中…";
+          try {
+            const res = await fetch("/api/distilled?url=" + encodeURIComponent(state.url), { method: "DELETE" });
+            const data = await res.json();
+            if (!data.ok) throw new Error((data.error && data.error.message) || "清空失败");
+            window.open(state.url.split("#")[0] + "#kd=1", "_blank");
+            btn.textContent = "已清空 · 去知乎点书签";
+            $("rd-ask-error").textContent =
+              "已清空本篇的解析与笔记。请在打开的知乎页面点一下书签「🧪 保存这篇文章」，保存后会跳回来并重新开读。";
+            setTimeout(reset, 6000);
+          } catch (err) {
+            reset();
+            $("rd-ask-error").textContent = "更新失败：" + (err.message || "未知错误");
+          }
+        });
+      })();
 
       // ---------- 学习记录下拉（有缓存即时渲染；打开文章后强制刷新以更新进度/高亮） ----------
       const histNormKey = (u) => {

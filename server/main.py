@@ -76,10 +76,10 @@ async def health():
 
 @app.middleware("http")
 async def _no_cache_html(request: Request, call_next):
-    """HTML 页面不做强缓存：本地/线上更新后刷新即可拿到新版，避免旧页面困扰"""
+    """静态资源不做强缓存（HTML / CSS / JS）：更新后刷新即可拿到新版，避免旧页面、旧样式"""
     response = await call_next(request)
     path = request.url.path
-    if path == "/" or path.endswith(".html"):
+    if path == "/" or path.endswith((".html", ".css", ".js", ".mjs")):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 
@@ -365,6 +365,27 @@ async def ingest(request: Request):
 async def distilled_index():
     """已蒸馏内容索引（供列表打标：哪些收藏已有全文）"""
     return {"ok": True, "items": await store.index()}
+
+
+@app.delete("/api/distilled")
+async def delete_distilled(request: Request, url: str):
+    """「更新文章」前置：清空某篇已保存的全文与学习数据（之后用书签重新保存即可覆盖）"""
+    session = _current_session(request)
+    _token, login_error = _resolve_token(session)
+    if login_error:
+        return {"ok": False, "error": login_error}
+    key = _norm_key(url)
+    item = await store.get(key)
+    if not item:
+        return {"ok": False, "error": {"code": "NOT_FOUND", "message": "这篇还没有保存过全文。"}}
+    try:
+        await store.delete(key)
+        # 旧段落划分与位置标记失去参照，必须一起清（否则重新保存后会锚到错的文字上）
+        await reading_store.delete_plan_and_nodes(key)
+        await reading_store.delete_user_events(key, _user_key_id(session))
+    except Exception:
+        return {"ok": False, "error": {"code": "DB_FAILED", "message": "清空失败，请稍后再试。"}}
+    return {"ok": True}
 
 
 @app.get("/api/distilled/content")

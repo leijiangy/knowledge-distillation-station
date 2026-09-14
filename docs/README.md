@@ -6,7 +6,11 @@
 
 | 文件 | 内容 | 来源 |
 |---|---|---|
-| [知乎黑客松-技术指南.md](知乎黑客松-技术指南.md) | 官方技术指南全文》（环境准备、CLI、OAuth、看山工作台、FAQ、资源汇总） | 飞书云文档，2026-09-13 读取 |
+| [项目企划书.md](项目企划书.md) | **项目唯一基准文档（v0.2 交付版）**：三层能力、功能清单 F1–F26、技术选型 T1–T9、决策记录 D1–D9、变更登记、学习会话设计（附录 A） | 本项目，2026-09-13 |
+| [学习会话设计-定稿.md](学习会话设计-定稿.md) | 学习会话（第三层「学会」）设计定稿；**已并入企划书附录 A**，本文保留备查 | 本项目，2026-09-13 |
+| [设计资源与原则.md](设计资源与原则.md) | 视觉设计资源与设计原则 | 本项目 |
+| [部署指南.md](部署指南.md) | CloudBase 云托管部署步骤（Dockerfile / 环境变量 / 回调地址） | 本项目 |
+| [知乎黑客松-技术指南.md](知乎黑客松-技术指南.md) | 官方技术指南全文（环境准备、CLI、OAuth、看山工作台、FAQ、资源汇总） | 飞书云文档，2026-09-13 读取 |
 
 ## 仓库内其他资料位置
 
@@ -36,10 +40,12 @@
 
 | 配置项 | 存放位置 | 是否进 git |
 |---|---|---|
-| OAuth App ID（441） | `app/hackathon.config.json` | 是（公开配置） |
-| OAuth App Key | `app/.env`（`ZHIHU_OAUTH_APP_KEY`） | **否**（gitignore 已挡住） |
-| 开放平台 Access Secret | `app/.env`（`ZHIHU_ACCESS_SECRET`） | **否** |
-| OAuth 回调地址 | 部署后在 `hackathon.config.json` + 赛事页面登记（两处必须完全一致） | 是（地址本身不敏感） |
+| OAuth App ID（441） | `server/.env`（`ZHIHU_OAUTH_APP_ID`）；官方脚手架参考 `app/hackathon.config.json` | 是（公开配置） |
+| OAuth App Key | `server/.env`（`ZHIHU_OAUTH_APP_KEY`）+ 云托管环境变量 | **否** |
+| 开放平台 Access Secret | `server/.env`（`ZHIHU_ACCESS_SECRET`）+ 云托管环境变量 | **否** |
+| DeepSeek API Key | `server/.env`（`DEEPSEEK_API_KEY`）+ 云托管环境变量 | **否** |
+| CloudBase 数据访问 | 云托管环境变量：`CLOUDBASE_ENV_ID` / `CLOUDBASE_API_KEY`（服务端 API Key） | **否** |
+| OAuth 回调地址 | 部署后在云托管环境变量登记 + 赛事页面登记（两处必须完全一致） | 是（地址本身不敏感） |
 
 部署时把 App Key 与 Access Secret 写入部署平台的 Secret/环境变量，不进入代码包。
 
