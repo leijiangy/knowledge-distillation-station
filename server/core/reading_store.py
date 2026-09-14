@@ -202,26 +202,3 @@ async def delete_user_events(article_key: str, uid: str) -> None:
         params={"article_key": f"eq.{article_key}", "uid": f"eq.{uid}"},
     )
     resp.raise_for_status()
-
-
-async def get_image_explanation(image_url: str) -> str:
-    """取某张配图的解释（按图片 URL 全局缓存：同一张图只生成一次，省额度）
-
-    表 image_explanations(url text primary key, content text, at bigint)，见设计文档 7.2。
-    """
-    _check_config()
-    resp = await _get_client().get(
-        f"{_REST}/image_explanations", params={"url": f"eq.{image_url}", "limit": 1})
-    resp.raise_for_status()
-    rows = resp.json()
-    return (rows[0].get("content") or "") if rows else ""
-
-
-async def save_image_explanation(image_url: str, content: str) -> None:
-    _check_config()
-    resp = await _get_client().post(
-        f"{_REST}/image_explanations",
-        headers={"Prefer": "resolution=merge-duplicates"},
-        json={"url": image_url, "content": content, "at": int(time.time())},
-    )
-    resp.raise_for_status()

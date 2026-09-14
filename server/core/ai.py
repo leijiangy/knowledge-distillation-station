@@ -6,7 +6,6 @@
 - 初始解释前置：认知负荷理论工作示范效应（对低知识水平学习者有益）
 - 不代劳：Bastani et al. PNAS 2025——无约束给答案有负效应；追问只指出断点
 """
-import base64
 import json
 import re
 
@@ -16,9 +15,6 @@ from .config import settings
 
 _TIMEOUT = 180.0
 _MODEL = "deepseek-chat"
-# 配图解释要能看图：DeepSeek 的视觉能力在 deepseek-flash 上（见官方 Vision 指南）
-_VISION_MODEL = "deepseek-flash"
-_IMG_MAX_BYTES = 8 * 1024 * 1024
 
 
 class AIError(Exception):
@@ -61,11 +57,11 @@ def _extract_json(raw: str) -> dict:
 
 
 async def _chat(messages: list, temperature: float = 0.3, max_tokens: int = 2400,
-                json_mode: bool = False, model: str | None = None) -> str:
+                json_mode: bool = False) -> str:
     if not settings.DEEPSEEK_API_KEY:
         raise AIError("DEEPSEEK_API_KEY 未配置。")
     payload = {
-        "model": model or _MODEL,
+        "model": _MODEL,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
@@ -194,76 +190,6 @@ async def segment_article(title: str, content: str, max_chars: int = 600) -> dic
 _EXPLAIN_SYSTEM = ("你是一位耐心、克制的中文精读教练。你的解释要准确、平实、不夸张。"
                    "涉及数学公式时，行内公式用 $…$ 包裹、独立成行的公式用 $$…$$ 包裹；"
                    "不要输出裸露的 LaTeX 命令（前端按这两个分隔符渲染公式）。")
-
-_VISION_SYSTEM = ("你是一位耐心、克制的中文精读教练。学生把文章里的插图拿给你看，"
-                  "你只说明这张图本身、以及该看它哪里；不替他把正文的推理讲完。")
-
-
-def _sniff_mime(raw: bytes) -> str:
-    """按文件头判断图片格式（知乎 CDN 有时不给 content-type）"""
-    if raw[:3] == b"\xff\xd8\xff":
-        return "image/jpeg"
-    if raw[:8] == b"\x89PNG\r\n\x1a\n":
-        return "image/png"
-    if raw[:6] in (b"GIF87a", b"GIF89a"):
-        return "image/gif"
-    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
-        return "image/webp"
-    return "image/jpeg"
-
-
-async def fetch_image_data_url(url: str) -> str:
-    """把配图抓成 base64 data URL。
-
-    不走「让模型自己去下载」那条路：知乎 CDN 有防盗链，服务端带空 Referer 抓更稳，
-    也能顺手卡住大小。调用方必须先校验 URL 属于这篇文章，否则会变成任意 URL 抓取器。
-    """
-    try:
-        async with httpx.AsyncClient(timeout=30.0, trust_env=False, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"Referer": ""})
-            resp.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise AIError(f"配图下载失败：{exc}") from exc
-    raw = resp.content or b""
-    if not raw:
-        raise AIError("配图内容为空。")
-    if len(raw) > _IMG_MAX_BYTES:
-        raise AIError("配图过大，暂不支持解释。")
-    mime = (resp.headers.get("content-type") or "").split(";")[0].strip()
-    if mime not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
-        mime = _sniff_mime(raw)
-    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
-
-
-async def explain_image(title: str, summary: str, before: str, after: str,
-                        data_url: str) -> str:
-    """解释一张原文配图：结合它在原文中的上下文（图片插在这两段之间），说清它是什么、该看哪里"""
-    if before or after:
-        where = ("这张图在原文中的位置：下面是它的上文与下文，图片就插在这两段之间。\n"
-                 + (f"【上文结尾处】\n…{before}\n\n" if before else "")
-                 + (f"【下文开头处】\n{after}…\n\n" if after else ""))
-    else:
-        where = "（这张图在原文中的位置没有记录，只能依据标题与主旨理解）\n\n"
-    prompt = (
-        "用户正在逐段精读一篇文章，把文中的一张配图拿给你看。\n\n"
-        f"文章标题：{title}\n"
-        f"全文主旨：{summary or '（未知）'}\n\n"
-        + where
-        + "要求：\n"
-        "1. 结合上下文说清这张图是什么：示意图 / 流程图 / 图表 / 截图 / 照片，以及它在讲什么\n"
-        "2. 再说该看哪里：关键元素、标注或坐标轴在表达什么；是图表就只描述趋势与量级，"
-        "不替读者下结论\n"
-        "3. 点明它与上下文的关系（例如它正好对应上文哪一句、展开或印证了什么）\n"
-        "4. 不复述正文、不扩展到图外内容；不超过 250 字，平实的中文\n"
-        "5. 图太模糊或看不出内容时直接说明看不清，不要猜"
-    )
-    return (await _chat([
-        {"role": "system", "content": _VISION_SYSTEM},
-        {"role": "user", "content": [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": data_url}},
-        ]},
-    ], temperature=0.4, max_tokens=1100, model=_VISION_MODEL)).strip()
 
 
 async def explain_segment(title: str, summary: str, segment_text: str,

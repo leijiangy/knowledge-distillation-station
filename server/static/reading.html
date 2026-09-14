@@ -98,33 +98,6 @@
       user-select: text; overflow-anchor: none;   /* 关闭滚动锚定：重渲染时滚动位置由代码控制 */
     }
     /* 内联配图：按抓取时记录的位置插回正文（图片不占原文的字符，是零长原子） */
-    .kd-img { display: block; margin: 10px 0; }
-    .kd-img img {
-      display: block; max-width: 100%; height: auto; cursor: pointer;
-      border: 1px solid var(--line); border-radius: 8px;
-    }
-    .kd-img:hover img { border-color: var(--green); }
-    .kd-img.active img { border-color: var(--green); box-shadow: 0 0 0 2px rgba(47,122,61,.18); }
-    .kd-img.busy img { opacity: .6; }
-    /* 配图被包在标记里时，外层下划线会横贯整行（图片是块级）——去掉它，用底色表示标记 */
-    .mk-shared:has(.kd-img), .mk-private:has(.kd-img) { border-bottom: 0; }
-
-    /* 位置缺失的配图（早期保存的文章）退回这里 */
-    .rd-figs {
-      flex: 0 0 auto; margin-top: 10px; padding: 8px 9px 9px;
-      border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.6);
-      max-height: 30%; overflow-y: auto;
-    }
-    .rd-figs-head { font-size: 12px; color: var(--ink-3); font-weight: 700; margin-bottom: 7px; }
-    .rd-figs-row { display: flex; flex-wrap: wrap; gap: 8px; }
-    .rd-fig {
-      width: 76px; height: 76px; padding: 0; display: block; cursor: pointer;
-      border: 1px solid var(--line); border-radius: 6px; background: none; overflow: hidden;
-    }
-    .rd-fig img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .rd-fig:hover { border-color: var(--green); }
-    .rd-fig.active { border-color: var(--green); box-shadow: 0 0 0 2px rgba(47,122,61,.18); }
-    .rd-fig.busy { opacity: .55; }
 
     .rd-explain {
       font-size: 15px; line-height: 1.95; color: var(--ink); white-space: pre-wrap;
@@ -337,7 +310,6 @@
         <div class="rd-pane">
           <div class="rd-pane-label" id="rd-left-label">本段原文</div>
           <div class="rd-text" id="rd-text"></div>
-          <div class="rd-figs" id="rd-figs" hidden></div>
         </div>
         <div class="rd-pane rd-side" id="rd-side">
           <div class="rd-pane-label" id="rd-right-label">本段解释</div>
@@ -528,7 +500,7 @@
             // 通过字符位置判断：落在已有标记的区间内（含多行标记的行间空白）→ 打开该层
             const hit = marks.find((m) => off >= m.start && off < m.end);
             if (hit) { openExplainTab(hit.id); return; }
-            if (e.target.closest && e.target.closest(".mk, .kd-img")) return;   // 点在标记/配图上
+            if (e.target.closest && e.target.closest(".mk")) return;   // 点在标记/配图上
             const text = scope === "explain" ? (tab.explain || "") : tab.text;
             const r = sentenceRangeAt(text, off);
             const free = freeRange(r, marks, off);
@@ -554,11 +526,10 @@
       }
 
       // ---------- 标记渲染 ----------
-      // 文本 → HTML：公式交给 KDM（识别 + KaTeX 渲染），配图按记录的字符位置内联插入，
-      // 标记按原文下标包在片段外层
-      function renderText(container, text, marks, images) {
+      // 文本 → HTML：公式交给 KDM（识别 + KaTeX 渲染），标记按原文下标包在片段外层
+      function renderText(container, text, marks) {
         container.innerHTML = KDM.buildHtml({
-          text, marks, images,
+          text, marks,
           markWrapper: (m, inner) => {
             const cls = m.kind === "explain" ? "mk-shared"
               : (m.kind === "draft" ? "mk-draft" : "mk-private");
@@ -572,12 +543,6 @@
             const id = Number(el.getAttribute("data-node"));
             if (!id) return;
             openExplainTab(id);   // 实线（共享解释）与虚线（私有提问）统一：点击即进入该层
-          });
-        });
-        container.querySelectorAll(".kd-img").forEach((el) => {
-          el.addEventListener("click", (event) => {
-            event.stopPropagation();   // 配图位于共享标记内时，只打开图片解释
-            explainFigure(el);
           });
         });
       }
@@ -674,8 +639,7 @@
           marksWithDraft.push({ id: 0, kind: "draft",
                                 start: state.draft.start, end: state.draft.end });
         }
-        renderText($("rd-text"), tab.text, marksWithDraft,
-                   tab.isRoot ? ((state.seg && state.seg.images) || []) : []);
+        renderText($("rd-text"), tab.text, marksWithDraft);
         const explainText = tab.explain || "（生成中或生成失败）";
         // 右栏标记：锚在本层内容上的子解释 / 子提问
         const curNode = tab.nodeId ? findNode(tab.nodeId) : null;
@@ -747,43 +711,6 @@
 
       function findNode(id) {
         return (state.segNodes || []).find((n) => n.id === id);
-      }
-
-      // ---------- 原文配图：内联在正文原位置；位置缺失的（早期保存的文章）退回下方配图栏 ----------
-      function renderFigs() {
-        const box = $("rd-figs");
-        if (!box) return;
-        const all = (state.article && state.article.images) || [];
-        const rest = all.map((x) => (typeof x === "string" ? { url: x, pos: null } : x))
-          .filter((x) => x && x.url && x.pos == null);
-        if (!rest.length) { box.hidden = true; box.innerHTML = ""; return; }
-        box.hidden = false;
-        // referrerpolicy：知乎图床有防盗链，卡片那边也是这么处理的
-        box.innerHTML = '<div class="rd-figs-head">未定位配图 ' + rest.length + " 张 · 点击看解释</div>"
-          + '<div class="rd-figs-row">' + rest.map((f) =>
-            '<button type="button" class="rd-fig" data-fig="' + esc(f.url) + '" title="解释这张图">'
-            + '<img src="' + esc(f.url) + '" alt="" loading="lazy" referrerpolicy="no-referrer"></button>'
-          ).join("") + "</div>";
-      }
-
-      // 说明一张图：上下文由服务端按抓取时记录的位置取（图片就插在上下文两段之间）
-      async function explainFigure(el) {
-        const image = el.getAttribute("data-fig") || "";
-        if (!image || !state.url) return;
-        document.querySelectorAll(".kd-img, .rd-fig").forEach((b) => b.classList.toggle("active", b === el));
-        showAnswer("这张图说明了什么？", "正在看图……", null);
-        el.classList.add("busy");
-        try {
-          const data = await api("/api/reading/image", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: state.url, image }),
-          });
-          KDM.renderMathInto($("rd-answer-body"), data.explain || "（没有拿到解释）");
-        } catch (err) {
-          KDM.renderMathInto($("rd-answer-body"), "解释失败：" + err.message);
-        } finally {
-          el.classList.remove("busy");
-        }
       }
 
       // ---------- 渲染一段 ----------
@@ -893,7 +820,6 @@
           state.url = url;
           state.article = data.article;
           KDM.renderMathInto($("rd-title"), data.article.title || "精读");
-          renderFigs();
           $("rd-title-link").href = url;   // 点标题回知乎原文
           loadAuthor(url, data.article.title || "", data.article.author);
           $("rd-start").hidden = true; $("rd-session").hidden = false;
@@ -1126,13 +1052,6 @@
       });
       $("rd-answer-close").addEventListener("click", hideAnswer);
       setupSelection();   // 划选：按住拖动 + 单击选整句（均不依赖原生文本选择）
-      const figsBox = $("rd-figs");
-      if (figsBox) {
-        figsBox.addEventListener("click", (e) => {
-          const fig = e.target.closest(".rd-fig");
-          if (fig) explainFigure(fig);
-        });
-      }
 
       // 更新文章：清空旧解析与笔记 → 打开知乎原文，点书签重新保存（保存后自动跳回并开读）
       (function initRefreshArticle() {
