@@ -667,6 +667,12 @@ async def reading_history_delete(request: Request, url: str):
     except Exception as exc:
         print(f"[reading] 重置文章失败：{exc}")
         return {"ok": False, "error": {"code": "DB_FAILED", "message": "删除失败，请稍后再试。"}}
+    # 自测数据单独清：表未建时也不能让上面的删除（全文）失败
+    try:
+        await reading_store.delete_quiz(key)
+        await reading_store.delete_quiz_attempts(key, uid)
+    except Exception as exc:
+        print(f"[reading] 清理自测数据失败（全文已删除）：{exc}")
     return {"ok": True}
 
 
@@ -818,13 +824,13 @@ async def reading_image(request: Request):
 
 @app.post("/api/reading/event")
 async def reading_event(request: Request):
-    """埋点：open / understood / deleted（只追加，不改变任何呈现）"""
+    """埋点：open / understood / deleted / finished（只追加，不改变任何呈现）"""
     try:
         body = await request.json()
     except Exception:
         return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
     event = str(body.get("event") or "")
-    if event not in ("open", "understood", "deleted"):
+    if event not in ("open", "understood", "deleted", "finished"):
         return {"ok": False, "error": {"code": "BAD_EVENT", "message": "未知事件。"}}
     item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
     if error:
@@ -837,6 +843,149 @@ async def reading_event(request: Request):
         int(node_id) if isinstance(node_id, int) else None,
     )
     return {"ok": True}
+
+
+# ---- 自测（读完之后的检测环节；题目按内容键全站共享） ----
+
+QUIZ_COUNT = 5          # 每篇出的题数
+QUIZ_MAX_CHARS = 20000  # 出题时给模型的原文上限（超长文截断，避免超出上下文）
+
+
+def _quiz_public(questions: list, attempts: dict) -> list:
+    """给前端的题目：不带答案与解析（判定留在后端，前端拿不到正确答案）"""
+    out = []
+    for i, q in enumerate(questions or []):
+        if not isinstance(q, dict):
+            continue
+        item = {"index": i, "kind": q.get("kind"), "focus": q.get("focus"),
+                "stem": q.get("stem") or ""}
+        if q.get("kind") == "choice":
+            item["options"] = q.get("options") or []
+        done = attempts.get(i)
+        if done:
+            item["done"] = True
+            item["correct"] = bool(done.get("correct"))
+        out.append(item)
+    return out
+
+
+async def _quiz_context(request: Request, url: str):
+    """自测公共前置：登录 + 全文 + 题目（无则生成，按内容键全站复用）"""
+    item, key, uid, error = await _reading_context(request, url)
+    if error:
+        return None, None, None, None, error
+    plan = await reading_store.get_article(key)
+    if not plan:
+        return None, None, None, None, {
+            "code": "NOT_OPENED", "message": "这个阅读会话还没开始。"}
+    # 题目表未建时（见部署指南），自测不可用但绝不能连累精读与提问
+    try:
+        row = await reading_store.get_quiz(key)
+    except Exception as exc:
+        print(f"[quiz] 读取题目失败：{exc}")
+        return None, None, None, None, {
+            "code": "DB_FAILED",
+            "message": "自测暂时不可用（需要在数据库建 reading_quizzes 表，见部署指南）。"}
+    questions = reading_store.load_questions(row)
+    if not questions:
+        content = (item.get("content") or "")[:QUIZ_MAX_CHARS]
+        try:
+            result = await ai.quiz_questions(item["title"], plan.get("summary") or "",
+                                             content, QUIZ_COUNT)
+            questions = result.get("questions") or []
+            summary = await ai.quiz_summary(item["title"], plan.get("summary") or "", content)
+        except ai.AIError as exc:
+            return None, None, None, None, {"code": "AI_FAILED", "message": str(exc)}
+        if not questions:
+            return None, None, None, None, {
+                "code": "AI_FAILED", "message": "这次没能生成有效的题目，请稍后再试。"}
+        try:
+            await reading_store.save_quiz(key, summary, questions, uid)
+        except Exception as exc:
+            print(f"[quiz] 保存题目失败：{exc}")   # 存不下也要把题给用户
+        row = {"summary": summary}
+    return item, key, uid, {"plan": plan, "row": row, "questions": questions}, None
+
+
+@app.get("/api/reading/quiz")
+async def reading_quiz(request: Request, url: str):
+    """自测：取题目（首次访问现场生成，约 10~30 秒）与我的作答进度"""
+    item, key, uid, ctx, error = await _quiz_context(request, url)
+    if error:
+        return {"ok": False, "error": error}
+    try:
+        attempts = reading_store.collapse_attempts(
+            await reading_store.list_quiz_attempts(key, uid))
+    except Exception:
+        attempts = {}      # 进度读不出来不影响做题
+    row = ctx["row"] or {}
+    return {"ok": True,
+            "article": {"key": key, "title": item["title"], "total":
+                        len((ctx["plan"].get("cuts") or [])) + 1},
+            "summary": row.get("summary") or "",
+            "questions": _quiz_public(ctx["questions"], attempts),
+            "answered": sum(1 for i in attempts if i < len(ctx["questions"]))}
+
+
+@app.post("/api/reading/quiz/answer")
+async def reading_quiz_answer(request: Request):
+    """自测作答：判定在后端；答错额外让模型针对这个选项讲一次"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    item, key, uid, ctx, error = await _quiz_context(request, str(body.get("url") or ""))
+    if error:
+        return {"ok": False, "error": error}
+    questions = ctx["questions"]
+    try:
+        index = int(body.get("index"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "题号不合法。"}}
+    if not 0 <= index < len(questions):
+        return {"ok": False, "error": {"code": "BAD_INDEX", "message": "这道题不存在。"}}
+    q = questions[index]
+    chosen_raw = body.get("answer")
+    right_index, right_bool = None, None
+    if q.get("kind") == "judgment":
+        if not isinstance(chosen_raw, bool):
+            return {"ok": False, "error": {"code": "BAD_ANSWER", "message": "请选择对或错。"}}
+        right_bool = bool(q.get("answer"))
+        correct = (chosen_raw == right_bool)
+        chosen, correct_text = ("对" if chosen_raw else "错"), ("对" if right_bool else "错")
+    else:
+        try:
+            pick = int(chosen_raw)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": {"code": "BAD_ANSWER", "message": "请选一个选项。"}}
+        options = q.get("options") or []
+        if isinstance(chosen_raw, bool) or not 0 <= pick < len(options):
+            return {"ok": False, "error": {"code": "BAD_ANSWER", "message": "选项不存在。"}}
+        answer = q.get("answer")
+        if not isinstance(answer, int) or isinstance(answer, bool) or not 0 <= answer < len(options):
+            return {"ok": False, "error": {"code": "BAD_QUESTION", "message": "这道题的答案有问题，请重做一遍。"}}
+        right_index = answer
+        correct = (pick == answer)
+        chosen = options[pick]
+        correct_text = options[answer]
+
+    explain = ""
+    if not correct:
+        try:
+            explain = await ai.quiz_explain(item["title"], ctx["plan"].get("summary") or "",
+                                            q.get("stem") or "", chosen, correct_text,
+                                            q.get("explanation") or "")
+        except ai.AIError as exc:
+            explain = ""       # 讲解失败不影响判定，前端退回出题时的解析
+            print(f"[quiz] 生成讲解失败：{exc}")
+    try:
+        await reading_store.append_quiz_attempt(key, uid, index, correct, chosen)
+    except Exception as exc:
+        print(f"[quiz] 保存作答失败：{exc}")   # 进度存不下不影响本次作答
+    return {"ok": True, "correct": correct, "chosen": chosen,
+            "answer": correct_text,
+            "right_index": right_index, "right_bool": right_bool,
+            "explain": explain or (q.get("explanation") or "")}
 
 
 @app.delete("/api/reading/node/{node_id}")

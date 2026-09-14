@@ -324,3 +324,130 @@ async def answer_question(question: str, summary: str, anchor_text: str,
     return (await _chat([{"role": "system", "content": _EXPLAIN_SYSTEM},
                          {"role": "user", "content": prompt}],
                         temperature=0.4, max_tokens=1200)).strip()
+
+
+# ---- 自测（读完之后的检测环节） ----
+
+_QUIZ_SYSTEM = (
+    "你是出题助手。你只输出 JSON，不输出任何解释性文字。"
+    "题目必须严格依据给定的原文，不得引入原文没有的事实。"
+)
+
+
+async def quiz_summary(title: str, summary: str, content: str) -> str:
+    """自测开头的全文概括（从学习记录重新进入时，先靠它把内容回忆起来）"""
+    prompt = (
+        "用户刚读完下面这篇文章，现在要开始自测。先写一段概括，帮他把内容回忆起来。\n\n"
+        f"标题：{title}\n"
+        f"（已有主旨：{summary or '（未知）'}）\n\n"
+        f"全文：\n{content}\n\n"
+        "要求：\n"
+        "1. 说清这篇文章的论证脉络：从什么问题出发、用什么论据、得到什么结论\n"
+        "2. 平实的中文，一段话，不超过 200 字\n"
+        "3. 不添加原文之外的评价，不做推荐"
+    )
+    return (await _chat([{"role": "user", "content": prompt}],
+                        temperature=0.3, max_tokens=900)).strip()
+
+
+async def quiz_questions(title: str, summary: str, content: str, count: int = 5) -> dict:
+    """自测题目：模型自己决定考知识记忆还是概念辨析，以及每题用判断还是选择。
+
+    约束（由 _normalize_questions 校验，不信任模型自述）：
+    - 只收 judgment（判断）/ choice（选择）两种题型；choice 恰好 4 个选项、answer 为 0-3 下标
+    - judgment 的 answer 只收 true / false
+    - 没有解析的题丢弃——宁可少出，不出错题
+    """
+    prompt = (
+        "用户刚读完下面这篇文章，现在要自测他是否真的记住了。请出题。\n\n"
+        f"标题：{title}\n"
+        f"全文主旨：{summary or '（未知）'}\n\n"
+        f"全文：\n{content}\n\n"
+        "出题要求：\n"
+        f"1. 共 {count} 道题，从不同段落取材，覆盖全文而不是集中在开头\n"
+        "2. 每道题你自己判断考什么：knowledge（知识记忆——原文直接给出的事实、定义、结论）"
+        "或 concept（概念辨析——容易混淆的两个概念、或某个结论的适用条件）\n"
+        "3. 每道题你自己判断用什么题型：judgment（判断题，考一个陈述的真假）"
+        "或 choice（选择题，四选一）。哪种最能测出是否真懂就用哪种\n"
+        "4. 干扰项要用原文里真实出现的相近概念，不能是明显荒谬的选项\n"
+        "5. 每题给一段 explanation：说明为什么是这个答案、容易错在哪。"
+        "不复述原文，不扩展到原文之外\n\n"
+        "只输出 JSON：\n"
+        '{"questions": [\n'
+        '  {"kind": "judgment", "focus": "knowledge", "stem": "题干（一个陈述）", '
+        '"answer": true, "explanation": "解析"},\n'
+        '  {"kind": "choice", "focus": "concept", "stem": "题干（一个问题）", '
+        '"options": ["选项A", "选项B", "选项C", "选项D"], "answer": 0, "explanation": "解析"}\n'
+        "]}\n"
+        "judgment 的 answer 是 true 或 false；choice 的 answer 是正确选项下标（0 开始）。"
+    )
+    raw = await _chat([{"role": "system", "content": _QUIZ_SYSTEM},
+                       {"role": "user", "content": prompt}],
+                      temperature=0.5, max_tokens=3000, json_mode=True)
+    return _normalize_questions(_extract_json(raw).get("questions"), count)
+
+
+_TRUE_WORDS = {"true", "对", "正确", "是", "yes"}
+_FALSE_WORDS = {"false", "错", "错误", "否", "不对", "no"}
+
+
+def _normalize_questions(raw, count: int) -> dict:
+    """把模型输出规整成可用的题目；任何字段不完整的题直接丢弃"""
+    questions = []
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        stem = str(item.get("stem") or "").strip()
+        explanation = str(item.get("explanation") or "").strip()
+        if not stem or not explanation:
+            continue
+        kind = str(item.get("kind") or "").strip().lower()
+        focus = str(item.get("focus") or "").strip().lower()
+        if focus not in ("knowledge", "concept"):
+            focus = "knowledge"
+        q = {"kind": kind, "focus": focus, "stem": stem, "explanation": explanation}
+        if kind == "judgment":
+            answer = item.get("answer")
+            if isinstance(answer, bool):
+                q["answer"] = answer
+            elif isinstance(answer, str) and answer.strip().lower() in _TRUE_WORDS:
+                q["answer"] = True
+            elif isinstance(answer, str) and answer.strip().lower() in _FALSE_WORDS:
+                q["answer"] = False
+            else:
+                continue        # 认不出的答案整题丢弃，不能默认成「错」
+        elif kind == "choice":
+            options = [str(o).strip() for o in (item.get("options") or []) if str(o).strip()]
+            answer = item.get("answer")
+            if len(options) != 4 or not isinstance(answer, int) or isinstance(answer, bool):
+                continue
+            if not 0 <= answer <= 3:
+                continue
+            q["options"] = options
+            q["answer"] = answer
+        else:
+            continue
+        questions.append(q)
+        if len(questions) >= count:
+            break
+    return {"questions": questions}
+
+
+async def quiz_explain(title: str, summary: str, question: str, chosen: str,
+                       correct: str, explanation: str) -> str:
+    """答错时的讲解：针对用户选的那个说清它错在哪，而不是笼统地复述正确答案"""
+    prompt = (
+        "用户自测时答错了一道题。请给他讲解。\n\n"
+        f"标题：{title}\n"
+        f"全文主旨：{summary or '（未知）'}\n\n"
+        f"题目：{question}\n"
+        f"正确答案：{correct}\n"
+        f"用户的选择：{chosen}\n"
+        f"（出题时准备的解析：{explanation}）\n\n"
+        "要求：\n"
+        "1. 先说清用户选的那个为什么不对——它错在哪个概念上，不要只说「错了」\n"
+        "2. 再说明正确答案成立的理由\n"
+        "3. 平实的中文，不超过 200 字；不延伸成一篇讲解，不替用户重读原文"
+    )
+    return (await _chat([{"role": "user", "content": prompt}],
+                        temperature=0.4, max_tokens=1000)).strip()

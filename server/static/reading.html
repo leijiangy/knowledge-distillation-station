@@ -210,6 +210,59 @@
     .rd-error:empty { display: none; }   /* 无错误时不占位（保证输入框与左栏底边对齐） */
     .rd-done { text-align: center; padding: 40px 20px; }
     .rd-done h2 { font-size: 20px; margin-bottom: 14px; }
+
+    /* ---- 读完后的岔路口：先选去哪儿，而不是逐个阶段进去再跳过 ---- */
+    .rd-fork { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+    .rd-fork .rd-btn { text-decoration: none; }
+
+    /* ---- 自测 ---- */
+    .rd-quiz { max-width: 720px; margin: 0 auto; }
+    .rd-quiz-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+    .rd-quiz-progress { flex: 1 1 auto; height: 5px; border-radius: 999px; background: rgba(47,122,61,.12); overflow: hidden; }
+    .rd-quiz-progress i { display: block; height: 100%; background: var(--green); transition: width .3s ease; }
+    .rd-quiz-count { font-size: 12px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .rd-quiz-card {
+      background-color: var(--paper); background-image: var(--noise);
+      border: 1px solid var(--line-card); border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(30,40,28,.035); padding: 22px 24px;
+    }
+    .rd-quiz-summary {
+      font-size: 14.5px; line-height: 1.9; color: var(--ink-2);
+      border-left: 2px solid rgba(47,122,61,.35); padding-left: 14px; margin-bottom: 20px;
+    }
+    .rd-quiz-tags { display: flex; gap: 8px; margin-bottom: 12px; }
+    .rd-quiz-tag {
+      font-size: 11.5px; color: var(--green); border: 1px solid var(--line);
+      border-radius: 5px; padding: 1px 8px; background: rgba(47,122,61,.06);
+    }
+    .rd-quiz-tag.kind { color: var(--gold); background: rgba(183,134,40,.07); }
+    .rd-quiz-stem { font-size: 16.5px; line-height: 1.85; color: var(--ink); margin-bottom: 18px; }
+    .rd-quiz-opts { display: flex; flex-direction: column; gap: 9px; }
+    .rd-quiz-opt {
+      text-align: left; font: inherit; font-size: 14.5px; line-height: 1.7;
+      border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.6);
+      color: var(--ink); padding: 12px 15px; cursor: pointer;
+      transition: border-color .18s ease, background-color .18s ease;
+    }
+    .rd-quiz-opt:hover:not(:disabled) { border-color: #c6d2bf; background: rgba(47,122,61,.05); }
+    .rd-quiz-opt:disabled { cursor: default; }
+    /* 判定结果只用两个字表达，不引入新配色以外的语言 */
+    .rd-quiz-opt.right { border-color: rgba(47,122,61,.55); background: rgba(47,122,61,.10); font-weight: 600; }
+    .rd-quiz-opt.wrong { border-color: rgba(163,51,51,.5); background: rgba(163,51,51,.07); }
+    .rd-quiz-opt .pick { color: var(--ink-3); margin-right: 8px; font-variant-numeric: tabular-nums; }
+    .rd-quiz-verdict { margin-top: 16px; font-size: 14px; font-weight: 700; }
+    .rd-quiz-verdict.right { color: var(--green); }
+    .rd-quiz-verdict.wrong { color: #a33; }
+    .rd-quiz-explain {
+      margin-top: 10px; font-size: 14px; line-height: 1.9; color: var(--ink);
+      background: rgba(47,122,61,.055); border: 1px solid var(--line);
+      border-radius: 8px; padding: 14px 16px; white-space: pre-wrap;
+    }
+    .rd-quiz-foot { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+    .rd-quiz-foot .spacer { flex: 1 1 auto; }
+    .rd-quiz-end { text-align: center; padding: 34px 20px; }
+    .rd-quiz-end h2 { font-size: 19px; margin-bottom: 12px; }
+    .rd-quiz-end .rd-fork { margin-top: 18px; }
   </style>
 </head>
 <body class="reading">
@@ -354,10 +407,43 @@
         </div>
       </div>
 
+      <!-- 读完后的岔路口：自测 / 复习 / 先不测，用户自己选；两个阶段都不再需要「跳过」 -->
       <div class="rd-done" id="rd-finish" hidden>
-        <h2>🎉 这篇读完了</h2>
+        <img src="/reading-illustration.webp" width="180" height="148" alt="" loading="lazy">
+        <h2>这篇读完了</h2>
         <p class="rd-hint" style="margin-bottom:16px">你留在这里的提问和解释都保存着，随时可以回来。</p>
-        <a class="rd-btn" href="/" style="text-decoration:none">返回收藏夹</a>
+        <div class="rd-fork">
+          <button class="rd-btn" id="rd-to-quiz">自测一下 →</button>
+          <button class="rd-btn ghost" id="rd-to-review">复习标记与提问</button>
+          <a class="rd-btn ghost" href="/">返回收藏夹</a>
+        </div>
+        <p class="rd-hint" id="rd-finish-hint" style="margin-top:14px"></p>
+      </div>
+
+      <!-- 自测：先给一段概括把内容回忆起来，再一题一屏地作答 -->
+      <div class="rd-quiz" id="rd-quiz" hidden>
+        <div class="rd-quiz-head">
+          <button class="rd-btn ghost" id="rd-quiz-back" style="padding:5px 14px;font-size:12.5px">← 返回</button>
+          <div class="rd-quiz-progress"><i id="rd-quiz-bar" style="width:0"></i></div>
+          <span class="rd-quiz-count" id="rd-quiz-count"></span>
+        </div>
+
+        <div class="rd-quiz-card" id="rd-quiz-card">
+          <div class="rd-quiz-summary" id="rd-quiz-summary" hidden></div>
+          <div id="rd-quiz-question"></div>
+        </div>
+
+        <div class="rd-quiz-end" id="rd-quiz-end" hidden>
+          <h2 id="rd-quiz-end-title"></h2>
+          <p class="rd-hint" id="rd-quiz-end-note"></p>
+          <div class="rd-fork">
+            <button class="rd-btn" id="rd-quiz-again">再做一遍</button>
+            <button class="rd-btn ghost" id="rd-quiz-to-read">回去读</button>
+            <a class="rd-btn ghost" href="/">返回收藏夹</a>
+          </div>
+        </div>
+
+        <div class="rd-error" id="rd-quiz-error" style="margin-top:12px"></div>
       </div>
     </div>
       </div>
@@ -1053,27 +1139,190 @@
         }
       }
 
+      function logEvent(event, segIndex, nodeId) {
+        fetch("/api/reading/event", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: state.url, event: event,
+                                 seg_index: segIndex, node_id: nodeId }),
+        }).catch(() => {});
+      }
+
+      // 读完：进岔路口。只记一条 finished 埋点，界面不为它改变任何东西
+      function showFinish() {
+        logEvent("finished", state.seg.index, null);
+        $("rd-session").querySelector(".rd-body").hidden = true;
+        $("rd-tabs").hidden = true;
+        $("rd-right-label").hidden = true;
+        const askArea = $("rd-ask-area");
+        if (askArea) askArea.hidden = true;
+        $("rd-quiz").hidden = true;
+        $("rd-finish").hidden = false;
+      }
+
       async function understood() {
         const tab = state.tabs[state.tabs.length - 1];
         if (!tab.isRoot) { closeTopTab(); return; }     // 层级：收起本层
-        if (state.seg.index + 1 >= state.article.total) {   // 最后一段：读完
-          fetch("/api/reading/event", {
+        logEvent("understood", state.seg.index, null);
+        if (state.seg.index + 1 >= state.article.total) { showFinish(); return; }
+        await goSegment(state.seg.index + 1);
+      }
+
+      // ---------- 自测：一题一屏；判定在后端，答错才带讲解 ----------
+      const quiz = { questions: [], index: 0, summary: "", right: 0, wrong: 0, locked: false };
+
+      function quizShow(show) {
+        $("rd-quiz").hidden = !show;
+        if (show) { $("rd-finish").hidden = true; $("rd-quiz-error").textContent = ""; }
+      }
+
+      function quizProgress() {
+        const total = quiz.questions.length;
+        const done = quiz.right + quiz.wrong;
+        $("rd-quiz-count").textContent = total ? (done + " / " + total) : "";
+        $("rd-quiz-bar").style.width = total ? Math.round(done / total * 100) + "%" : "0";
+      }
+
+      // 复习过的题（服务端记着的）在进度条上也算已答，避免重进时看起来退回原点
+      function quizCountSettled() {
+        const total = quiz.questions.length;
+        const done = quiz.questions.filter((q) => q.done).length;
+        $("rd-quiz-count").textContent = total ? (done + " / " + total) : "";
+        $("rd-quiz-bar").style.width = total ? Math.round(done / total * 100) + "%" : "0";
+      }
+
+      function renderQuizQuestion() {
+        const q = quiz.questions[quiz.index];
+        if (!q) { renderQuizEnd(); return; }
+        quiz.locked = false;
+        quizProgress();
+        const head = '<div class="rd-quiz-tags">'
+          + '<span class="rd-quiz-tag">' + (q.focus === "concept" ? "概念辨析" : "知识记忆") + "</span>"
+          + '<span class="rd-quiz-tag kind">' + (q.kind === "choice" ? "选择" : "判断") + "</span>"
+          + "</div>";
+        const stem = '<div class="rd-quiz-stem">' + KDM.buildHtml({ text: q.stem }) + "</div>";
+        let body;
+        if (q.kind === "choice") {
+          body = '<div class="rd-quiz-opts">' + (q.options || []).map((opt, i) =>
+            '<button class="rd-quiz-opt" data-pick="' + i + '">'
+            + '<span class="pick">' + "ABCD"[i] + "</span>"
+            + KDM.buildHtml({ text: opt }) + "</button>").join("") + "</div>";
+        } else {
+          body = '<div class="rd-quiz-opts">'
+            + '<button class="rd-quiz-opt" data-pick="true"><span class="pick">○</span>对</button>'
+            + '<button class="rd-quiz-opt" data-pick="false"><span class="pick">○</span>错</button>'
+            + "</div>";
+        }
+        $("rd-quiz-question").innerHTML = head + stem + body
+          + '<div id="rd-quiz-result"></div>'
+          + '<div class="rd-quiz-foot"><span class="spacer"></span>'
+          + '<button class="rd-btn ghost" id="rd-quiz-skip">先跳过</button></div>';
+      }
+
+      async function answerQuiz(pick, btn) {
+        if (quiz.locked) return;
+        quiz.locked = true;
+        const q = quiz.questions[quiz.index];
+        const opts = Array.from(document.querySelectorAll("#rd-quiz-question .rd-quiz-opt"));
+        opts.forEach((b) => { b.disabled = true; });
+        btn.classList.add("picked");
+        const result = $("rd-quiz-result");
+        result.innerHTML = '<div class="rd-quiz-verdict">判定中…</div>';
+        let data;
+        try {
+          data = await api("/api/reading/quiz/answer", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: state.url, event: "understood", seg_index: state.seg.index }),
-          }).catch(() => {});
-          $("rd-session").querySelector(".rd-body").hidden = true;
-          $("rd-tabs").hidden = true;
-          $("rd-right-label").hidden = true;
-          const askArea = $("rd-ask-area");
-          if (askArea) askArea.hidden = true;
-          $("rd-finish").hidden = false;
+            body: JSON.stringify({ url: state.url, index: quiz.index,
+                                   answer: pick }),
+          });
+        } catch (err) {
+          quiz.locked = false;
+          opts.forEach((b) => { b.disabled = false; });
+          btn.classList.remove("picked");
+          result.innerHTML = "";
+          $("rd-quiz-error").textContent = "提交失败：" + err.message;
           return;
         }
-        fetch("/api/reading/event", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: state.url, event: "understood", seg_index: state.seg.index }),
-        }).catch(() => {});
-        await goSegment(state.seg.index + 1);
+        $("rd-quiz-error").textContent = "";
+        const correct = Boolean(data.correct);
+        if (correct) { quiz.right += 1; } else { quiz.wrong += 1; }
+        q.done = true; q.correct = correct;
+        // 标出对错：正确选项一定点亮；用户选错的那个标红
+        opts.forEach((b) => {
+          const pickRaw = b.getAttribute("data-pick");
+          if (q.kind === "choice") {
+            if (Number(pickRaw) === data.right_index) b.classList.add("right");
+            else if (b === btn) b.classList.add("wrong");
+          } else {
+            const isRight = (pickRaw === "true") === Boolean(data.right_bool);
+            if (isRight) b.classList.add("right");
+            else if (b === btn) b.classList.add("wrong");
+          }
+        });
+        result.innerHTML =
+          '<div class="rd-quiz-verdict ' + (correct ? "right" : "wrong") + '">'
+          + (correct ? "答对了" : "答错了，正确答案是「" + esc(data.answer) + "」") + "</div>"
+          + (data.explain ? '<div class="rd-quiz-explain">' + esc(data.explain) + "</div>" : "");
+        // 答完这题才给「下一题」；答对也保留问题，不自动跳，用户自己看解析
+        const foot = document.querySelector("#rd-quiz-question .rd-quiz-foot");
+        const skip = $("rd-quiz-skip");
+        if (skip) skip.remove();
+        const next = document.createElement("button");
+        next.className = "rd-btn";
+        next.id = "rd-quiz-next";
+        next.textContent = quiz.index + 1 >= quiz.questions.length ? "看结果 →" : "下一题 →";
+        foot.appendChild(next);
+        next.addEventListener("click", () => {
+          if (quiz.index + 1 >= quiz.questions.length) { renderQuizEnd(); return; }
+          quiz.index += 1;
+          renderQuizQuestion();
+        });
+        quizProgress();
+      }
+
+      function renderQuizEnd() {
+        $("rd-quiz-question").innerHTML = "";
+        $("rd-quiz-card").hidden = true;
+        $("rd-quiz-end").hidden = false;
+        const total = quiz.questions.length;
+        const settled = quiz.questions.filter((q) => q.done).length;
+        $("rd-quiz-end-title").textContent = settled + " / " + total + " 题已作答";
+        const note = quiz.wrong
+          ? "答错的地方上面都给了讲解，回去读那一部分或者过一阵再来一次。"
+          : "这篇你记住了。过几天再来一次，看还记得多少。";
+        $("rd-quiz-end-note").textContent = note;
+        logEvent("quiz_done", null, null);
+      }
+
+      async function startQuiz() {
+        quizShow(true);
+        $("rd-quiz-card").hidden = false;
+        $("rd-quiz-end").hidden = true;
+        $("rd-quiz-question").innerHTML =
+          '<div class="rd-quiz-stem">正在根据这篇的内容出题……（首次约 10~30 秒）</div>';
+        $("rd-quiz-summary").hidden = true;
+        quiz.questions = []; quiz.index = 0; quiz.right = 0; quiz.wrong = 0;
+        let data;
+        try {
+          data = await api("/api/reading/quiz?url=" + encodeURIComponent(state.url));
+        } catch (err) {
+          $("rd-quiz-question").innerHTML = "";
+          $("rd-quiz-error").textContent = "出题失败：" + err.message;
+          return;
+        }
+        quiz.questions = data.questions || [];
+        quiz.summary = data.summary || "";
+        if (!quiz.questions.length) {
+          $("rd-quiz-question").innerHTML = "";
+          $("rd-quiz-error").textContent = "这篇没能出出题目，稍后再试。";
+          return;
+        }
+        // 概括：从学习记录重新进来时靠它把内容回忆起来
+        if (quiz.summary) {
+          $("rd-quiz-summary").textContent = quiz.summary;
+          $("rd-quiz-summary").hidden = false;
+        }
+        quizCountSettled();
+        renderQuizQuestion();
       }
 
       // ---------- 事件 ----------
@@ -1086,6 +1335,37 @@
       $("rd-ask").addEventListener("click", submit);
       $("rd-question").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
       $("rd-done").addEventListener("click", understood);
+      $("rd-to-quiz").addEventListener("click", startQuiz);
+      $("rd-to-review").addEventListener("click", () => {
+        // 复习阶段还没实现：说清楚，而不是给一个点了没反应的按钮
+        $("rd-finish-hint").textContent = "复习阶段还没做，先自测或者回去读。";
+      });
+      $("rd-quiz-back").addEventListener("click", () => {
+        quizShow(false);
+        $("rd-finish").hidden = false;
+      });
+      $("rd-quiz-again").addEventListener("click", startQuiz);
+      $("rd-quiz-to-read").addEventListener("click", () => {
+        quizShow(false);
+        $("rd-session").querySelector(".rd-body").hidden = false;
+        $("rd-right-label").hidden = false;
+        const askArea = $("rd-ask-area");
+        if (askArea) askArea.hidden = false;
+        goSegment(0);
+      });
+      document.addEventListener("click", (e) => {
+        const opt = e.target.closest("#rd-quiz-question .rd-quiz-opt");
+        if (opt) answerQuiz(opt.getAttribute("data-pick") === "true" ? true
+                            : opt.getAttribute("data-pick") === "false" ? false
+                            : Number(opt.getAttribute("data-pick")), opt);
+      });
+      document.addEventListener("click", (e) => {
+        if (e.target.closest("#rd-quiz-skip")) {
+          if (quiz.index + 1 >= quiz.questions.length) { renderQuizEnd(); return; }
+          quiz.index += 1;
+          renderQuizQuestion();
+        }
+      });
       $("rd-prev").addEventListener("click", () => goSegment(state.seg.index - 1));
       // 段落控件：点开段列表，点外部关闭
       $("rd-seg-btn").addEventListener("click", (e) => { e.stopPropagation(); toggleSegMenu(); });

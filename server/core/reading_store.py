@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """学习会话数据层（CloudBase PostgreSQL，经 REST/PostgREST 访问）。
 
-三张表：
+五张表：
 - reading_articles：article_key -> {summary, cuts, by_uid, at}（全局共享：划分 + 主旨）
 - reading_nodes：节点树。kind: init（初始解释，每段唯一）/ explain（共享选区解释）/ ask（私有提问）
 - reading_events：埋点（open / understood / deleted，只追加）
+- reading_quizzes：自测题目与概括，按内容键全局共享（一人生成、全站复用）
+- reading_quiz_attempts：作答记录，按用户私有（只追加，折叠取每题最新）
 """
+import json
 import time
 
 from .store import _REST, _check_config, _get_client
@@ -223,5 +226,102 @@ async def save_image_explanation(image_url: str, content: str) -> None:
         f"{_REST}/image_explanations",
         headers={"Prefer": "resolution=merge-duplicates"},
         json={"url": image_url, "content": content, "at": int(time.time())},
+    )
+    resp.raise_for_status()
+
+
+# ---- 自测（题目按内容键全局共享，一人生成全站复用；进度按用户私有） ----
+
+async def get_quiz(article_key: str) -> dict | None:
+    """取一篇的题目与概括（表 reading_quizzes，见设计文档 8.3）"""
+    _check_config()
+    resp = await _get_client().get(
+        f"{_REST}/reading_quizzes",
+        params={"article_key": f"eq.{article_key}", "limit": 1},
+    )
+    resp.raise_for_status()
+    rows = resp.json()
+    return rows[0] if rows else None
+
+
+async def save_quiz(article_key: str, summary: str, questions: list, by_uid: str) -> None:
+    """保存题目与概括（首次生效：并发时先到者胜，保证所有人做到同一套题）"""
+    _check_config()
+    resp = await _get_client().post(
+        f"{_REST}/reading_quizzes",
+        headers={"Prefer": "resolution=ignore-duplicates"},
+        json={"article_key": article_key, "summary": summary,
+              "questions": json.dumps(questions, ensure_ascii=False),
+              "by_uid": by_uid, "at": int(time.time())},
+    )
+    resp.raise_for_status()
+
+
+def load_questions(row: dict | None) -> list:
+    """题目字段在库里是文本，取出来要能容忍损坏（纯函数，便于测试）"""
+    if not row:
+        return []
+    raw = row.get("questions")
+    if isinstance(raw, list):
+        return raw
+    try:
+        data = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+async def delete_quiz(article_key: str) -> None:
+    """重置一篇时连题目一起删（题目锚在这篇全文上）"""
+    _check_config()
+    resp = await _get_client().delete(
+        f"{_REST}/reading_quizzes", params={"article_key": f"eq.{article_key}"})
+    resp.raise_for_status()
+
+
+async def append_quiz_attempt(article_key: str, uid: str, q_index: int,
+                              correct: bool, chosen: str) -> None:
+    """记一次作答（只追加；同一个问题重答会有多条，取最新的看进度）"""
+    _check_config()
+    resp = await _get_client().post(
+        f"{_REST}/reading_quiz_attempts",
+        json={"article_key": article_key, "uid": uid, "q_index": q_index,
+              "correct": bool(correct), "chosen": chosen, "at": int(time.time())},
+    )
+    resp.raise_for_status()
+
+
+async def list_quiz_attempts(article_key: str, uid: str) -> list:
+    _check_config()
+    resp = await _get_client().get(
+        f"{_REST}/reading_quiz_attempts",
+        params={"article_key": f"eq.{article_key}", "uid": f"eq.{uid}",
+                "order": "at.asc"},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def collapse_attempts(rows: list) -> dict:
+    """把作答记录折叠成每题的最新一次（纯函数，便于测试）"""
+    latest = {}
+    for row in rows or []:
+        idx = row.get("q_index")
+        if not isinstance(idx, int):
+            continue
+        at = row.get("at") or 0
+        cur = latest.get(idx)
+        if cur is None or at >= cur["at"]:
+            latest[idx] = {"at": at, "correct": bool(row.get("correct")),
+                           "chosen": row.get("chosen") or ""}
+    return latest
+
+
+async def delete_quiz_attempts(article_key: str, uid: str) -> None:
+    """用户的作答记录（随学习记录一起重置）"""
+    _check_config()
+    resp = await _get_client().delete(
+        f"{_REST}/reading_quiz_attempts",
+        params={"article_key": f"eq.{article_key}", "uid": f"eq.{uid}"},
     )
     resp.raise_for_status()
