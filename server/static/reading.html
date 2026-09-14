@@ -5,13 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>精读 · 知识蒸馏站</title>
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="/style.css?v=3">
+  <link rel="stylesheet" href="/style.css?v=2">
   <script src="/bg.js?v=2" defer></script>
   <style>
     /* ===== 精读会话（设计见 docs/学习会话设计-定稿.md） ===== */
     body.reading { padding: 20px; }
     .reading .page { max-width: 1240px; }
-    .reading .sidebar { height: calc(100vh - 40px); }
     .reading .content { padding: 16px var(--content-pad); }
     .rd { width: 100%; }
 
@@ -19,7 +18,7 @@
     .rd-head { display: flex; align-items: center; gap: 14px; margin: 0 2px 8px; }
     .rd-head > a { color: var(--green); text-decoration: none; font-size: 13px; white-space: nowrap; }
     .rd-title-link { flex: 1; min-width: 0; text-decoration: none; color: inherit; }
-    .rd-head h1 { font-size: 25px; line-height: 1.5; font-weight: 700; overflow: hidden;
+    .rd-head h1 { font-size: 32px; line-height: 1.25; font-weight: 700; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap; }
     .rd-title-link:hover h1 { color: var(--green); }
     /* 更新文章：右上角（清空旧解析 → 去知乎页面用书签重新保存） */
@@ -33,15 +32,15 @@
     .rd-refresh-article.confirm { color: #a33; border-color: rgba(170,51,51,.5); font-weight: 700; }
     /* 作者信息（标题下方：头像 + 昵称 + 认证徽章/称号；头像与昵称可点进主页） */
     .rd-author { display: flex; align-items: center; gap: 9px; white-space: nowrap;
-      font-size: 13.5px; color: var(--ink-2); margin: 0 2px 16px; }
+      font-size: 19px; color: var(--ink-2); margin: 0 2px 12px; }
     .rd-author-link { display: flex; align-items: center; gap: 9px; color: inherit; text-decoration: none; }
     .rd-author-link:hover #rd-author-name { color: var(--green); }
-    .rd-author img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
-    .rd-author img.rd-author-badge { width: 16px; height: 16px; border-radius: 0; }
-    .rd-author .rd-author-title { font-size: 12px; color: var(--gold); font-weight: 700; }
+    .rd-author img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+    .rd-author img.rd-author-badge { width: 22px; height: 22px; border-radius: 0; }
+    .rd-author .rd-author-title { font-size: 17px; color: var(--gold); font-weight: 700; }
     /* 换段导航（卡片内第 3 行，横跨两栏居中）：← 上一段 | 段落控件（点开为段列表） | 我懂了 → */
     .rd-nav-row { grid-row: 3; grid-column: 1 / -1; display: flex; align-items: center;
-      justify-content: center; gap: 14px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+      justify-content: center; gap: 14px; margin-top: 10px; }
     .rd-seg-picker { position: relative; }
     .rd-seg-btn {
       border: 1px solid var(--line); background: rgba(255,255,252,.9); color: var(--ink);
@@ -63,7 +62,7 @@
     .rd-seg-item.active { background: var(--green); color: #f6fbf3; border-color: var(--green); font-weight: 700; }
 
     /* 标签栏（层级）：卡片内顶部，横跨两栏 */
-    .rd-tabs { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+    .rd-tabs { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
     .rd-tab {
       border: 1px solid var(--line); background: rgba(255,255,252,.8); color: var(--ink-2);
       border-radius: 999px; padding: 4px 12px; font-size: 12.5px;
@@ -81,19 +80,19 @@
       display: grid; grid-template-columns: .85fr 1.15fr; column-gap: 16px;
       background-color: var(--paper); background-image: var(--noise);
       border: 1px solid var(--line-card); border-radius: 8px;
-      box-shadow: 0 2px 5px rgba(30,40,28,.035);
+      box-shadow: 0 1px 2px rgba(30,40,28,.07), 0 14px 34px -18px rgba(30,40,28,.28);
       padding: 18px 20px;
       transition: grid-template-columns .32s ease;
     }
     .rd-pane { min-width: 0; min-height: 0; transition: opacity .3s ease; }
     .rd-pane:not(.rd-side) { display: flex; flex-direction: column; }
-
+    @media (max-width: 900px) { .rd-body { grid-template-columns: 1fr; } #rd-body-main { height: auto; } }
     .rd-pane-label { font-size: 12px; color: var(--ink-3); font-weight: 700; margin-bottom: 8px; }
     /* 会话卡片内的栏目标签不显示：层级信息由顶部标签栏承担，避免"本段解释/上一层的文本"重复出现 */
     #rd-body-main .rd-pane-label { display: none; }
     .rd-text {
-      font-size: 16px; line-height: 1.95; color: var(--ink); white-space: pre-wrap;
-      flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 18px 20px;
+      font-size: 15px; line-height: 2.05; color: var(--ink); white-space: pre-wrap;
+      flex: 1 1 0; min-height: 320px; overflow-y: auto; padding: 4px 6px 10px;
       border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.6);
       user-select: text; overflow-anchor: none;   /* 关闭滚动锚定：重渲染时滚动位置由代码控制 */
     }
@@ -127,9 +126,9 @@
     .rd-fig.busy { opacity: .55; }
 
     .rd-explain {
-      font-size: 15px; line-height: 1.95; color: var(--ink); white-space: pre-wrap;
-      border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px;
-      background: rgba(47,122,61,.055); min-height: 120px; overflow-y: auto; overflow-anchor: none;
+      font-size: 14px; line-height: 1.95; color: var(--ink); white-space: pre-wrap;
+      border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px;
+      background: rgba(47,122,61,.16); min-height: 120px; overflow-y: auto; overflow-anchor: none;
       display: flex; flex-direction: column; height: 100%;
       flex: 1 1 100%; min-width: 0;
       transition: flex-basis .3s ease, opacity .3s ease, transform .3s ease,
@@ -140,7 +139,7 @@
 
     /* 会话卡片：高度跟随视口，解释/回答吃掉剩余空间（对话与提问栏在下方纵向排布） */
     /* 会话卡片：高度跟随视口；第 1 行层级标签、第 3 行换段导航 */
-    #rd-body-main { height: calc(100vh - 178px); min-height: 440px;
+    #rd-body-main { height: calc(100vh - 165px); min-height: 480px;
       grid-template-rows: auto minmax(0, 1fr) auto; }
     #rd-body-main > .rd-pane { grid-row: 2; }
     .rd-main { display: flex; align-items: stretch; min-width: 0; flex: 1 1 auto; min-height: 200px; }
@@ -161,14 +160,14 @@
       flex: 1 1 100%; width: auto; opacity: 1;
       border-color: var(--line); background: rgba(255,255,255,.6);
     }
-    .rd-answer-head { display: flex; align-items: flex-start; gap: 8px; padding: 16px 20px 0; }
+    .rd-answer-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 14px 0; }
     .rd-answer-q { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--ink);
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .rd-answer-close { border: 0; background: none; color: var(--ink-3); font-size: 18px; line-height: 1;
       cursor: pointer; font-family: inherit; padding: 0 2px; }
     .rd-answer-close:hover { color: var(--ink); }
-    .rd-answer-body { flex: 1; overflow-y: auto; padding: 12px 20px 18px;
-      font-size: 15px; line-height: 1.95; color: var(--ink); white-space: pre-wrap; }
+    .rd-answer-body { flex: 1; overflow-y: auto; padding: 8px 14px 14px;
+      font-size: 14px; line-height: 1.95; color: var(--ink); white-space: pre-wrap; }
     /* 标记：共享=实线，私有=虚线；草稿=浏览器选中色 */
     .mk { cursor: pointer; }
     .mk-shared { border-bottom: 2px solid var(--green); background: rgba(47,122,61,.06); }
@@ -193,7 +192,7 @@
     .rd-input-row { display: flex; gap: 8px; align-items: center; }
     .rd-input-row input {
       flex: 1; min-width: 0; padding: 10px 13px; font-size: 14px; font-family: inherit;
-      border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink);
+      border: 1px solid var(--line); border-radius: 9px; background: #fff;
     }
     .rd-input-row .rd-btn { white-space: nowrap; }
     .rd-input-row .rd-hint { margin: 0; white-space: nowrap; }
@@ -201,42 +200,16 @@
     .rd-nav { display: flex; gap: 10px; align-items: center; }
     .rd-btn {
       background: var(--green); color: #f6fbf3; border: none; cursor: pointer;
-      padding: 10px 20px; font-size: 14px; font-weight: 600; border-radius: 8px; font-family: inherit;
-      box-shadow: 0 1px 2px rgba(24,65,28,.12), inset 0 1px rgba(255,255,255,.1);
+      padding: 10px 22px; font-size: 14px; font-weight: 700; border-radius: 9px; font-family: inherit;
     }
     .rd-btn:hover { background: var(--green-dark); }
-    .rd-btn.ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--line); box-shadow: none; }
+    .rd-btn.ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--line); }
     .rd-btn.ghost:hover { color: var(--green); border-color: #c6d2bf; }
     .rd-btn:disabled { opacity: .45; cursor: default; }
     .rd-error { color: #a33; font-size: 13px; white-space: pre-wrap; }
     .rd-error:empty { display: none; }   /* 无错误时不占位（保证输入框与左栏底边对齐） */
     .rd-done { text-align: center; padding: 40px 20px; }
     .rd-done h2 { font-size: 20px; margin-bottom: 14px; }
-    .rd-done img { width: 180px; height: 148px; object-fit: contain; margin-bottom: 16px; }
-    .rd-text, .rd-explain, .rd-answer-body { scrollbar-width: thin; scrollbar-color: #c8d4c0 transparent; }
-    .rd-input-row input::placeholder { color: var(--ink-3); font-size: 12.5px; }
-    .rd-input-row input:focus { border-color: #97b78b; box-shadow: 0 0 0 3px rgba(47,122,61,.07); }
-    @media (max-width: 900px) {
-      body.reading { padding: 16px 12px 32px; }
-      .reading .content { padding: 20px var(--content-pad); }
-      .rd-head h1 { font-size: 22px; }
-      .rd-body { grid-template-columns: minmax(0, 1fr); row-gap: 16px; }
-      #rd-body-main { height: auto; min-height: 0; grid-template-rows: auto; }
-      #rd-body-main > .rd-pane { grid-row: auto; grid-column: 1; }
-      .rd-text { flex: auto; min-height: 220px; max-height: 52vh; }
-      .rd-side { min-height: 300px; }
-      .rd-explain, .rd-answer-body { max-height: 50vh; }
-      .rd-nav-row { grid-row: auto; grid-column: 1; flex-wrap: wrap; margin-top: 0; gap: 10px; }
-    }
-    @media (max-width: 480px) {
-      .rd-head { flex-wrap: wrap; }
-      .rd-title-link { flex-basis: 100%; }
-      .rd-head h1 { white-space: normal; font-size: 20px; }
-      .rd-body { padding: 14px 12px; }
-      .rd-text, .rd-explain { padding: 16px; }
-      .rd-btn { padding: 9px 14px; font-size: 13px; }
-      .rd-seg-btn { padding: 6px 10px; }
-    }
   </style>
 </head>
 <body class="reading">
@@ -382,8 +355,7 @@
       </div>
 
       <div class="rd-done" id="rd-finish" hidden>
-        <img src="/reading-illustration.webp" width="180" height="148" alt="" loading="lazy">
-        <h2>这篇读完了</h2>
+        <h2>🎉 这篇读完了</h2>
         <p class="rd-hint" style="margin-bottom:16px">你留在这里的提问和解释都保存着，随时可以回来。</p>
         <a class="rd-btn" href="/" style="text-decoration:none">返回收藏夹</a>
       </div>

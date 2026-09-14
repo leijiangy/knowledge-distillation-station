@@ -330,12 +330,13 @@ async def ingest(request: Request):
     title = str(body.get("title") or "").strip()[:200]
     content = str(body.get("content") or "").strip()
     images = body.get("images") or []
-    if not url or "zhihu.com" not in url:
-        return {"ok": False, "error": {"code": "BAD_URL", "message": "需要知乎内容链接。"}}
+    # 图片地址要排在前面判：zhimg.com 不含子串 zhihu.com，否则会被下一条笼统地拦掉
     if zhihu.is_image_url(url):
         return {"ok": False, "error": {
             "code": "BAD_URL",
             "message": "这是图片地址而不是文章页（可能点开了大图）：请回到文章页面再保存。"}}
+    if not url or "zhihu.com" not in url:
+        return {"ok": False, "error": {"code": "BAD_URL", "message": "需要知乎内容链接。"}}
     if len(content) < 100:
         return {"ok": False, "error": {"code": "TOO_SHORT", "message": "内容过短，可能不是文章页。"}}
     if len(content) > DISTILL_MAX_CHARS:
