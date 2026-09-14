@@ -184,6 +184,14 @@ body {
   font-size: 12.5px; background: rgba(255, 255, 252, .85); color: var(--ink); cursor: pointer;
   font-family: inherit;
 }
+/* 搜索框：收藏筛选（窄）与内容搜索（宽）共用一套，宽度用修饰类区分 */
+.search-input {
+  border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px;
+  font-size: 12.5px; background: rgba(255, 255, 252, .85); color: var(--ink);
+  font-family: inherit; width: 130px;
+}
+.search-input:focus { outline: none; border-color: #c6d2bf; }
+.search-input-wide { width: 240px; font-size: 13px; }
 .btn-ghost {
   background: transparent; color: var(--ink-2); border: 1px solid var(--line);
   padding: 7px 13px; font-size: 12.5px; border-radius: 7px; cursor: pointer;
@@ -302,7 +310,7 @@ body {
 .modal-close:hover { background: rgba(47, 122, 61, .08); color: var(--ink); }
 .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; padding-right: 30px; }
 .modal-sub { color: var(--ink-2); font-size: 13.5px; margin-bottom: 16px; }
-.bookmarklet-wrap { display: inline-block; margin: 10px 0 6px; }
+.bookmarklet-wrap { display: inline-block; margin: 10px 0 6px; white-space: nowrap; }
 .bookmarklet {
   display: inline-block; background: var(--green); color: #f6fbf3; text-decoration: none;
   padding: 9px 20px; border-radius: 9px; font-weight: 700; font-size: 13.5px;
@@ -464,16 +472,18 @@ body {
   .tour-copy { font-size: 13px; }
 }
 /* ---- 首页视图 ---- */
-.home-hero { padding: 28px 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+/* 版式：hero 是一块"案头"——大标题、一句愿景、动作按钮，插画在右；
+   教程竖排，每步一条细线。愿景句负责语气，其余元素保持克制。 */
+.home-hero { padding: 34px 0 26px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
 .home-intro { flex: 1; min-width: 0; }
-.home-illustration { width: 220px; height: 180px; object-fit: contain; flex: 0 0 auto; }
-.home-hero h1 { font-size: 34px; line-height: 1.5; font-weight: 700; letter-spacing: -.3px; }
-.home-hero p { color: var(--ink-2); margin-top: 12px; max-width: 560px; font-size: 15px; }
+.home-illustration { width: 230px; height: 172px; object-fit: contain; flex: 0 0 auto; }
+.home-hero h1 { font-size: 38px; line-height: 1.38; font-weight: 700; letter-spacing: -.5px; }
+.home-hero p { color: var(--ink-2); margin-top: 15px; max-width: 520px; font-size: 15px; line-height: 1.95; }
 .home-actions { display: flex; gap: 12px; align-items: center; margin-top: 22px; flex-wrap: wrap; }
 .btn-primary:disabled { background: #a8bfa8; cursor: default; }
 
 .home-bookmark {
-  margin-top: 16px; background: rgba(255, 255, 253, .92);
+  margin-top: 10px; background: rgba(255, 255, 253, .92);
   border: 1px solid var(--line); border-radius: 10px; padding: 26px 28px 22px;
   box-shadow: 0 2px 5px rgba(30, 40, 28, .025);
 }
@@ -486,6 +496,11 @@ body {
 .tstep + .tstep { border-top: 1px solid var(--line); padding-top: 20px; }
 .tstep > b { display: flex; align-items: center; gap: 9px; font-weight: 600; }
 .tstep > b .ui-icon { color: var(--green); }
+/* 步骤序号：真实顺序信息，不是装饰（三步本来就有先后） */
+.tstep-k {
+  font-size: 11.5px; font-weight: 700; color: var(--green);
+  font-variant-numeric: tabular-nums; letter-spacing: .08em;
+}
 .tstep .hint { display: block; color: var(--ink-3); font-size: 13px; margin-top: 7px; line-height: 1.85; }
 .hint-inline { color: var(--ink-3); font-size: 12px; margin-left: 8px; }
 .copy-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }

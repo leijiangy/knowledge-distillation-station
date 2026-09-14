@@ -16,6 +16,13 @@
     recoEmpty: $("reco-empty"), recoEmptyText: $("reco-empty-text"), recoRetry: $("reco-retry"),
     viewHome: $("view-home"), viewCollections: $("view-collections"),
     homeGotoCollections: $("home-goto-collections"),
+    favFilter: $("fav-filter"), emptyGotoSearch: $("empty-goto-search"),
+    navSearch: $("nav-search"), viewSearch: $("view-search"),
+    searchExpand: $("search-expand"), searchInput: $("search-input"), searchBtn: $("search-btn"),
+    searchCards: $("search-cards"),
+    searchIdle: $("search-idle"), searchLoading: $("search-loading"),
+    searchError: $("search-error"), searchErrorText: $("search-error-text"), searchRetry: $("search-retry"),
+    searchEmpty: $("search-empty"), searchEmptyText: $("search-empty-text"),
     homeBookmarklet: $("home-bookmarklet"), homeBookmarkletCode: $("home-bookmarklet-code"),
     homeCopyBookmarklet: $("home-copy-bookmarklet"), homeCopyBookmark: $("home-copy-bookmark"),
     copyBookmarkHint: $("copy-bookmark-hint"),
@@ -54,10 +61,15 @@
   let allItems = [];          // 当前收藏夹的全部条目
   let sortMode = "favtime";
   let page = 1;               // 当前页码（客户端分页）
+  let favFilter = "";         // 收藏列表内的标题/作者筛选（纯前端，F33）
   let distilledMap = {};      // 已保存内容索引：url(去参) -> {title, length, at}
   let historyMap = {};        // 学习记录索引：url(去参) -> {seg, total}
 
   // ---- 保存书签（动态生成：写入当前站点域名；带 #kd=1 来源标记的页面蒸完自动跳回） ----
+  // 书签逻辑一改就改这里：书签代码是拖的那一刻生成的，旧标签页拖出来的是旧代码，
+  // 用户靠这一行能自查装的是哪一版（v5：配图取址支持懒加载图与 srcset）
+  const BOOKMARKLET_VERSION = "v5";
+
   function buildBookmarklet() {
     const origin = window.location.origin;
     return [
@@ -80,14 +92,31 @@
       "pageUrl=pageUrl.replace(/\\/question\\/undefined\\/answer\\/(\\d+)/,'/answer/$1');",
       // 配图：先在每张图前插一个不可见标记，innerText 会把标记放在图片真实位置上，
       // 由此得到图片在正文里的字符下标；读完再把标记从文本和 DOM 里清掉（正文逐字不变）
+      // 取图地址：知乎正文的图是懒加载的，没进过视口的图 currentSrc/src 还是 data: 占位符，
+      // 真地址在 data-src / data-original 这些属性里——按顺序挑第一个像真地址的。
+      "var pickUrl=function(im){",
+      "var cands=[im.currentSrc,im.getAttribute('src'),im.getAttribute('data-src'),",
+      "im.getAttribute('data-original'),im.getAttribute('data-actualsrc'),im.getAttribute('data-lazy-src')];",
+      "var ss=String(im.getAttribute('srcset')||'');",
+      "if(ss){var tail=ss.split(',').pop()||'';cands.push((tail.trim().split(/\\s+/)[0])||'');}",
+      "for(var k=0;k<cands.length;k++){",
+      "var u=cands[k];if(!u||typeof u!=='string')continue;",
+      "if(u.indexOf('data:')===0||u.indexOf('blob:')===0)continue;",
+      "try{u=new URL(u,location.href).href;}catch(e){continue;}",
+      "var h=(u.split('/')[2]||'').toLowerCase();",
+      "if(!/(^|\\.)(zhimg|zhihu)\\.com$/.test(h))continue;",
+      "return u.split('?')[0];",
+      "}",
+      "return '';};",
       "var seen=[];var picked=[];var list=el.querySelectorAll('img');",
       "for(var i=0;i<list.length&&picked.length<9;i++){",
       "var im=list[i];var cls=String(im.className||'');",
       "if(/avatar|emoji|icon|badge|logo|symbol|sticker/i.test(cls))continue;",
-      "var s=im.currentSrc||im.getAttribute('src')||im.getAttribute('data-original')||im.getAttribute('data-actualsrc')||'';",
-      "if(!s||s.indexOf('zhimg.com')<0)continue;",
-      "if(im.naturalWidth&&im.naturalWidth<200)continue;",
-      "s=s.split('?')[0];",
+      "var s=pickUrl(im);",
+      "if(!s)continue;",
+      // 只跳过"明确是小图"的：naturalWidth 为 0 说明还没加载，不能当成小图
+      // （clientWidth 在这里不可用：图未加载或加载失败时它是浏览器的占位尺寸，会把正常图误杀）
+      "if(im.naturalWidth>0&&im.naturalWidth<200)continue;",
       "if(seen.indexOf(s)>=0)continue;seen.push(s);",
       "var tok='\\u2063K'+picked.length+'\\u2063';",
       "var node=document.createTextNode(tok);",
@@ -106,7 +135,7 @@
       "if(pos>=0&&pos<=text.length)imgs.push({url:p.url,pos:pos});",
       "}",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
-      "if(!confirm('保存这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
+      "if(!confirm('保存这篇文章？（书签 " + BOOKMARKLET_VERSION + "）\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
       // 是否从站里来的：优先看 #kd=1 标记，其次看 referrer（从站里打开的新标签页带着我们的域名）。
       // 知乎点开大图（灯箱）会改写地址、把 #kd=1 抹掉——只认标记就会既不跳转、又把内容存到错键上
       "var fromStation=location.hash.indexOf('kd=1')>=0||(document.referrer||'').indexOf('" + origin + "')===0;",
@@ -134,9 +163,11 @@
     if (els.viewHome) els.viewHome.hidden = name !== "home";
     if (els.viewCollections) els.viewCollections.hidden = name !== "collections";
     if (els.viewRecommend) els.viewRecommend.hidden = name !== "recommend";
+    if (els.viewSearch) els.viewSearch.hidden = name !== "search";
     if (els.navHome) els.navHome.classList.toggle("current", name === "home");
     if (els.favParent) els.favParent.classList.toggle("current", name === "collections");
     if (els.navRecommend) els.navRecommend.classList.toggle("current", name === "recommend");
+    if (els.navSearch) els.navSearch.classList.toggle("current", name === "search");
   }
 
   function openModal(el) { if (el) el.hidden = false; }
@@ -331,6 +362,16 @@
       </article>`;
   }
 
+  function filteredItems() {
+    const q = favFilter.trim().toLowerCase();
+    if (!q) return allItems;
+    return allItems.filter((it) => {
+      const title = String(it.Title || "").toLowerCase();
+      const author = String((it.Author && it.Author.Name) || "").toLowerCase();
+      return title.includes(q) || author.includes(q);
+    });
+  }
+
   function sortItems() {
     const by = {
       favtime: (a, b) => (b.FavTime || 0) - (a.FavTime || 0),
@@ -339,11 +380,11 @@
       richness: (a, b) => ((b.metrics && b.metrics.richness && b.metrics.richness.score) || 0) - ((a.metrics && a.metrics.richness && a.metrics.richness.score) || 0),
       credibility: (a, b) => ((b.metrics && b.metrics.credibility && b.metrics.credibility.score) || 0) - ((a.metrics && a.metrics.credibility && a.metrics.credibility.score) || 0),
     };
-    return [...allItems].sort(by[sortMode] || by.favtime);
+    return [...filteredItems()].sort(by[sortMode] || by.favtime);
   }
 
   function totalPages() {
-    return Math.max(1, Math.ceil(allItems.length / PAGE_SIZE));
+    return Math.max(1, Math.ceil(filteredItems().length / PAGE_SIZE));
   }
 
   function bindCardActions(container) {
@@ -385,6 +426,15 @@
 
   function renderCards() {
     const sorted = sortItems();
+    // 筛选把收藏全筛没了：复用空态盒子给一句反馈（「去搜一篇」按钮只在收藏夹真空时出现）
+    if (!sorted.length && favFilter.trim()) {
+      els.cards.innerHTML = "";
+      els.pager.hidden = true;
+      showState("Empty");
+      els.emptyText.textContent = `没有匹配「${favFilter.trim()}」的收藏。`;
+      if (els.emptyGotoSearch) els.emptyGotoSearch.hidden = true;
+      return;
+    }
     const start = (page - 1) * PAGE_SIZE;
     els.cards.innerHTML = sorted.slice(start, start + PAGE_SIZE).map(cardHtml).join("");
     bindCardActions(els.cards);
@@ -634,6 +684,7 @@
       if (allItems.length === 0) {
         showState("Empty");
         els.emptyText.textContent = data.message || "这个收藏夹还是空的。";
+        if (els.emptyGotoSearch) els.emptyGotoSearch.hidden = false;  // 筛选空态会藏掉它，这里恢复
         return;
       }
       hideStates();
@@ -702,7 +753,9 @@
   let recommendBatch = 0;
   let recommendLoaded = false;
 
-  function recommendCardHtml(item) {
+  function recommendCardHtml(item, footHtml) {
+    const foot = footHtml
+      || `<div class="foot">同主题推荐 · 来自你收藏的《${escapeHtml(String(item.seed || "").slice(0, 24))}》</div>`;
     const key = normKey(item.Url);
     const dist = distilledMap[key];
     const author = item.AuthorName || "";
@@ -729,7 +782,7 @@
         </div>
         <p class="summary">${escapeHtml(item.ContentText || "")}</p>
         ${actionHtml}
-        <div class="foot">同主题推荐 · 来自你收藏的《${escapeHtml(String(item.seed || "").slice(0, 24))}》</div>
+        ${foot}
       </article>`;
   }
 
@@ -781,6 +834,51 @@
       if (err.code === "LOGIN_REQUIRED") { showHome(); return; }
       setRecoState("Error");
       if (els.recoErrorText) els.recoErrorText.textContent = err.message || "出了点问题，请重试。";
+    }
+  }
+
+  // ---- 内容搜索（F32）：空收藏夹用户的冷启动入口 ----
+  let searchQuery = "";
+  let searchLoadedFor = "";    // 已经出过结果的 query（进视图时决定显示引导态还是保留结果）
+
+  function setSearchState(name) {
+    for (const key of ["searchIdle", "searchLoading", "searchError", "searchEmpty"]) {
+      if (els[key]) els[key].hidden = key !== "search" + name;
+    }
+    if ((name === "Loading" || name === "Error" || name === "Empty") && els.searchCards) {
+      els.searchCards.innerHTML = "";
+    }
+  }
+
+  async function loadSearch(query, force) {
+    const q = String(query != null ? query : (els.searchInput ? els.searchInput.value : "")).trim();
+    if (!q) { setSearchState("Idle"); return; }
+    searchQuery = q;
+    setSearchState("Loading");
+    try {
+      // 先对齐已保存索引：搜到自己保存过的文章时，卡片要亮「开始学习」而不是「保存全文」
+      await refreshDistilled();
+      const data = await api("/api/search?q=" + encodeURIComponent(q) + (force ? "&force=1" : ""));
+      if (!data.ok) {
+        const error = new Error((data.error && data.error.message) || "搜索失败");
+        error.code = data.error && data.error.code;
+        throw error;
+      }
+      const items = data.items || [];
+      if (!items.length) {
+        setSearchState("Empty");
+        if (els.searchEmptyText) els.searchEmptyText.textContent = data.message || "没有搜到相关内容，换个关键词试试。";
+        return;
+      }
+      searchLoadedFor = q;
+      setSearchState(null);
+      els.searchCards.innerHTML = items.map((it) => recommendCardHtml(it,
+        `<div class="foot">搜索「${escapeHtml(q)}」的结果 · 点卡片去知乎原文收藏或保存</div>`
+      )).join("");
+      bindCardActions(els.searchCards);
+    } catch (err) {
+      setSearchState("Error");
+      if (els.searchErrorText) els.searchErrorText.textContent = err.message || "出了点问题，请重试。";
     }
   }
 
@@ -923,6 +1021,42 @@
     els.navRecommend.addEventListener("click", () => {
       showView("recommend");
       if (!recommendLoaded) loadRecommend(0, false);
+    });
+  }
+
+  // 内容搜索：进入显示引导态（已出过结果则保留）；点按钮 / 回车触发
+  if (els.navSearch) {
+    els.navSearch.addEventListener("click", () => {
+      showView("search");
+      if (!searchLoadedFor) setSearchState("Idle");
+    });
+  }
+  if (els.searchExpand) {
+    els.searchExpand.addEventListener("click", () => els.page.classList.remove("sidebar-collapsed"));
+  }
+  if (els.searchBtn) {
+    els.searchBtn.addEventListener("click", () => loadSearch(null, false));
+  }
+  if (els.searchInput) {
+    els.searchInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") loadSearch(null, false);
+    });
+  }
+  if (els.searchRetry) {
+    els.searchRetry.addEventListener("click", () => loadSearch(searchQuery, true));
+  }
+  // 收藏空态 → 搜索的引导按钮；收藏筛选框（F33，纯前端过滤）
+  if (els.emptyGotoSearch) {
+    els.emptyGotoSearch.addEventListener("click", () => {
+      showView("search");
+      if (els.searchInput) els.searchInput.focus();
+    });
+  }
+  if (els.favFilter) {
+    els.favFilter.addEventListener("input", () => {
+      favFilter = els.favFilter.value;
+      page = 1;
+      renderCards();
     });
   }
   if (els.recommendRefresh) {

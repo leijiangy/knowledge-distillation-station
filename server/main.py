@@ -506,6 +506,69 @@ async def recommend(request: Request, batch: int = 0, force: int = 0):
     return {"ok": True, "items": items, "total": total, "batch": batch}
 
 
+# ---- 内容搜索：空收藏夹用户的冷启动入口（企划书 F32） ----
+SEARCH_COUNT = 15
+SEARCH_QUERY_MAX = 60
+
+
+async def _seen_keys(session) -> set:
+    """要从搜索结果里排除的内容键：已保存全文（全局）+ 已收藏（登录且有缓存时）"""
+    seen = set(await store.keys())
+    if session:
+        fav_payload = user_cache.get(user_key("collections:first", _user_key_id(session))) or {}
+        for it in (fav_payload.get("items") or []):
+            seen.add(str(it.get("Url") or "").split("?")[0].split("#")[0])
+    return seen
+
+
+@app.get("/api/search")
+async def search_content(request: Request, q: str = "", force: int = 0):
+    """按关键词搜索知乎公共内容。
+
+    未登录也可用：搜索接口走 Access Secret，不依赖用户 OAuth。
+    结果按 query 全站共享缓存（同一个词多人搜索只花一次额度）；指标随结果进缓存，
+    排除逻辑（已收藏/已保存）因人而异，在缓存之后逐请求执行。
+    """
+    query = str(q or "").strip()[:SEARCH_QUERY_MAX]
+    if not query:
+        return {"ok": False, "error": {"code": "EMPTY_QUERY", "message": "请输入搜索关键词。"}}
+    session = _current_session(request)
+    cache_key = "search:" + query
+    pool = None if force else content_cache.get(cache_key)
+    if pool is None:
+        try:
+            rows = await zhihu.search_zhihu(query, count=SEARCH_COUNT)
+        except zhihu.ZhihuError as exc:
+            return {"ok": False, "error": {"code": str(exc.code), "message": exc.message}}
+        pool = []
+        for row in rows:
+            url = str(row.get("Url") or "")
+            if not url:
+                continue
+            raw_title = str(row.get("Title") or "")
+            text = (row.get("ContentText") or "")[:400]
+            pool.append({
+                "Title": re.sub(r"\s*[-—|]\s*知乎\s*$", "", raw_title).strip() or raw_title,
+                "Url": url,
+                "ContentText": text,
+                # 搜索行没有 Summary 字段，复制一份让「信息量」指标有东西可算
+                "Summary": text,
+                "AuthorName": row.get("AuthorName") or "",
+                "AuthorAvatar": row.get("AuthorAvatar") or "",
+                "AuthorBadge": row.get("AuthorBadge") or "",
+                "AuthorBadgeText": row.get("AuthorBadgeText") or "",
+                "AuthorityLevel": row.get("AuthorityLevel"),
+                "ContentType": _content_type_of(url),
+            })
+        pool = _enrich_with_shared_metrics(pool)
+        content_cache.set(cache_key, pool)
+    seen = await _seen_keys(session)
+    items = [row for row in pool
+             if str(row.get("Url") or "").split("?")[0].split("#")[0] not in seen]
+    return {"ok": True, "query": query, "total": len(items), "items": items,
+            "message": "" if items else "没有搜到合适的内容，换个关键词试试。"}
+
+
 # ---- 学习会话（逐段精读，设计见 docs/学习会话设计-定稿.md） ----
 async def _reading_context(request: Request, url: str):
     """会话公共前置：登录校验 + 归一化 key + 取全文。返回 (item, key, uid, error)"""

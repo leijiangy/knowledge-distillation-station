@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>知识蒸馏站 · 把收藏夹变成学习进度表</title>
-  <link rel="stylesheet" href="/style.css?v=5">
+  <link rel="stylesheet" href="/style.css?v=6">
   <script src="/bg.js?v=2" defer></script>
 </head>
 <body>
@@ -52,6 +52,13 @@
             </span>
           </button>
 
+          <button class="nav-item nav-parent" id="nav-search">
+            <span class="left">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><line x1="16" y1="16" x2="20" y2="20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              搜索
+            </span>
+          </button>
+
           <div class="nav-group" id="hist-group">
             <button class="nav-item nav-parent" id="hist-parent">
               <span class="left">
@@ -87,7 +94,7 @@
         <div class="home-hero">
           <div class="home-intro">
             <h1>今天学点什么？</h1>
-            <p>从收藏的一篇开始，把没读懂的地方慢慢弄清楚。</p>
+            <p class="home-lede">有一天你会发现，那些曾让你卡住的段落，你已经能自己讲给别人听了。</p>
             <div class="home-actions">
               <button class="btn-primary" id="home-goto-collections" hidden>浏览我的收藏 →</button>
             </div>
@@ -99,13 +106,15 @@
           <h3><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5C8.5 3.5 5 3.5 3 4.5v14c2-1 5.5-1 9 1 3.5-2 7-2 9-1v-14c-2-1-5.5-1-9 1Z"/><path d="M12 5.5v14M6 8h3M15 8h3"/></svg> 从收藏到精读</h3>
           <div class="tsteps">
             <div class="tstep">
-              <b><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h12v17l-6-4-6 4Z"/><path d="M9 7h6"/></svg> 挑一篇想读的内容</b><span class="hint">在「我的收藏」里看每篇的三指标（认可度 / 信息量 / 准确性）雷达图与分数，挑出今天想学的那篇</span>
+              <b><span class="tstep-k">STEP 01</span> 挑一篇想读的</b>
+              <span class="hint">在「我的收藏」里，每篇都带三个指标（认可度 / 信息量 / 准确性）和雷达图，可以按任一项排序，挑一篇来读。</span>
             </div>
             <div class="tstep">
-              <b><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11m-4-4 4 4 4-4M4 15v5h16v-5"/></svg> 保存完整文章</b><span class="hint">点卡片上的「保存全文」，到打开的知乎页面点一下书签栏的「🧪 保存这篇文章」。首次使用需先把它装进书签栏 ↓</span>
+              <b><span class="tstep-k">STEP 02</span> 保存完整文章</b>
+              <span class="hint">点卡片上的「保存全文」，在打开的知乎页面点一下书签栏的「🧪 保存这篇文章」。首次使用需要先把它装进书签栏。</span>
               <div class="bookmarklet-wrap">
                 <a class="bookmarklet" id="home-bookmarklet" href="javascript:void(0)" draggable="true">🧪 保存这篇文章</a>
-                <span class="hint-inline">← 直接拖进书签栏（一次性，5 秒）</span>
+                <span class="hint-inline">← 拖进书签栏</span>
               </div>
               <div class="copy-row">
                 或者
@@ -114,7 +123,8 @@
               </div>
             </div>
             <div class="tstep">
-              <b><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h5"/></svg> 开始逐段精读</b><span class="hint">全文送达后知乎标签自动关闭；卡片亮起「✓ 已保存」，点击即可进入学习</span>
+              <b><span class="tstep-k">STEP 03</span> 开始逐段精读</b>
+              <span class="hint">全文送达后，卡片会亮起「✓ 已保存」，点击就能进入学习。读不懂的地方划选生成解释，也可以直接打字提问；读完之后可以自测，答错和跳过的地方都会讲清楚。</span>
             </div>
           </div>
           <details class="manual">
@@ -136,6 +146,7 @@
           </div>
           <div class="toolbar-right">
             <span class="loaded-badge" id="loaded-badge" hidden></span>
+            <input class="search-input" id="fav-filter" type="search" placeholder="筛选标题 / 作者" aria-label="筛选收藏">
             <select id="sort-select" class="select" aria-label="排序方式">
               <option value="favtime">收藏时间（新→旧）</option>
               <option value="combined">综合分数（高→低）</option>
@@ -161,6 +172,7 @@
         <div class="state-box" id="state-empty" hidden>
           <span class="state-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5C8.5 3.5 5 3.5 3 4.5v14c2-1 5.5-1 9 1 3.5-2 7-2 9-1v-14c-2-1-5.5-1-9 1Z"/><path d="M12 5.5v14M6 8h3M15 8h3"/></svg></span>
           <p id="empty-text">这个收藏夹还是空的。</p>
+          <button class="btn-primary" id="empty-goto-search">收藏夹没东西？去搜一篇想学的 →</button>
         </div>
 
         <nav class="pager" id="pager" hidden aria-label="分页"></nav>
@@ -197,6 +209,42 @@
           <p id="reco-empty-text">暂时没有推荐内容。</p>
         </div>
       </section>
+
+      <!-- 视图四：内容搜索（空收藏夹用户的冷启动入口；未登录也可搜） -->
+      <section class="view" id="view-search" hidden>
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <button class="sidebar-toggle" id="search-expand" title="展开侧边栏" aria-label="展开侧边栏">
+              <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="11,6 17,12 11,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <h2>内容搜索</h2>
+          </div>
+          <div class="toolbar-right">
+            <input class="search-input search-input-wide" id="search-input" type="search" maxlength="60" placeholder="搜一篇想学的内容，如「费曼学习法」" aria-label="搜索关键词">
+            <button class="btn-primary" id="search-btn">搜索</button>
+          </div>
+        </div>
+
+        <div class="cards" id="search-cards"></div>
+
+        <div class="state-box" id="search-idle" hidden>
+          <span class="state-icon">🔍</span>
+          <p>收藏夹没东西也能开始：搜一篇想学的，点开知乎页面收藏它，<br>再用书签保存全文，就能进入逐段精读。</p>
+        </div>
+        <div class="state-box" id="search-loading" hidden>
+          <div class="spinner"></div>
+          <p>正在搜索……</p>
+        </div>
+        <div class="state-box" id="search-error" hidden>
+          <span class="state-icon">⚠️</span>
+          <p id="search-error-text"></p>
+          <button class="btn-primary" id="search-retry">重试</button>
+        </div>
+        <div class="state-box" id="search-empty" hidden>
+          <span class="state-icon">🫧</span>
+          <p id="search-empty-text">没有搜到相关内容，换个关键词试试。</p>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -221,6 +269,6 @@
   </div>
 
   <script src="/tutorial.js?v=1"></script>
-  <script src="/app.js?v=5"></script>
+  <script src="/app.js?v=6"></script>
 </body>
 </html>

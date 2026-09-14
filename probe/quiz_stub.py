@@ -40,6 +40,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/oauth/status":
+            return self._json({"ok": True, "authorized": True, "self_mode": False,
+                               "name": "演示账号"})
         if path == "/api/reading/quiz":
             return self._json({"ok": True, "article": {"total": 3},
                                "summary": "这篇文章从注意力机制出发，先给出 Query/Key/Value 的计算方式，"
@@ -86,7 +89,13 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})       # 埋点等一律接受
 
     def _file(self, path):
-        rel = "reading.html" if path in ("/", "/reading.html") else path.lstrip("/")
+        # 根路径给首页（和线上一致）；其余按文件路径找，找不到再退回精读页
+        if path in ("/", "/index.html"):
+            rel = "index.html"
+        elif path == "/reading.html":
+            rel = "reading.html"
+        else:
+            rel = path.lstrip("/")
         target = (STATIC / rel).resolve()
         if not str(target).startswith(str(STATIC)) or not target.is_file():
             target = STATIC / "reading.html"
