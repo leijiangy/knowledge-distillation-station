@@ -354,14 +354,14 @@ async def ingest(request: Request):
         for item in images[:9]:
             # 兼容两种形态：早期只存 URL 字符串；现在带正文里的字符位置
             raw_url = item.get("url") if isinstance(item, dict) else item
-            url = zhihu.clean_image_url(raw_url)
-            if not url or url in seen_images:
+            image_url = zhihu.clean_image_url(raw_url)
+            if not image_url or image_url in seen_images:
                 continue
             pos = item.get("pos") if isinstance(item, dict) else None
             if isinstance(pos, bool) or not isinstance(pos, int) or not (0 <= pos <= len(content)):
                 pos = None      # 位置不可信就当没有：宁可退回文章级展示，也不要锚错地方
-            seen_images.add(url)
-            clean_images.append({"url": url, "pos": pos})
+            seen_images.add(image_url)
+            clean_images.append({"url": image_url, "pos": pos})
     key = _norm_key(url)
     existing = await store.get(key)
     if existing is not None:

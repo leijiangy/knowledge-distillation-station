@@ -55,6 +55,7 @@
   let sortMode = "favtime";
   let page = 1;               // 当前页码（客户端分页）
   let distilledMap = {};      // 已保存内容索引：url(去参) -> {title, length, at}
+  let historyMap = {};        // 学习记录索引：url(去参) -> {seg, total}
 
   // ---- 保存书签（动态生成：写入当前站点域名；带 #kd=1 来源标记的页面蒸完自动跳回） ----
   function buildBookmarklet() {
@@ -178,6 +179,38 @@
     return s;
   }
 
+  function setHistoryMap(items) {
+    historyMap = {};
+    for (const item of items || []) {
+      const key = normKey(item.url);
+      if (key) historyMap[key] = item;
+    }
+  }
+
+  async function refreshHistoryMap() {
+    try {
+      const data = await api("/api/reading/history");
+      setHistoryMap(data.items || []);
+    } catch (err) { /* 续读失败不影响收藏列表本身 */ }
+  }
+
+  function readingHref(url) {
+    const target = String(url || "");
+    const history = historyMap[normKey(target)];
+    const seg = history ? Math.max(0, Number.parseInt(history.seg, 10) || 0) : null;
+    return "/reading.html?url=" + encodeURIComponent(target)
+      + (seg == null ? "" : "&seg=" + seg);
+  }
+
+  function readingAction(url, length) {
+    const history = historyMap[normKey(url)];
+    if (!history) return "✓ 已保存 · 全文 " + (length || 0) + " 字 · 开始学习 →";
+    const seg = Math.max(0, Number.parseInt(history.seg, 10) || 0);
+    const total = Math.max(0, Number.parseInt(history.total, 10) || 0);
+    const current = total ? Math.min(seg + 1, total) : seg + 1;
+    return "继续阅读 · 第 " + current + (total > 1 ? "/" + total : "") + " 段 →";
+  }
+
   function formatDate(unixSeconds) {
     if (!unixSeconds) return "未知时间";
     const d = new Date(unixSeconds * 1000);
@@ -261,10 +294,10 @@
       : "";
     // 已保存：标题/卡片点击直接进入学习；未保存：点击去知乎原文（新标签）
     const titleHtml = dist
-      ? `<a class="card-title" href="/reading.html?url=${encodeURIComponent(item.Url || "")}">${escapeHtml(item.Title || "（无标题）")}</a>`
+      ? `<a class="card-title" href="${readingHref(item.Url)}">${escapeHtml(item.Title || "（无标题）")}</a>`
       : `<a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>`;
     const badgeHtml = dist
-      ? `<button class="distill-badge" data-learn="${escapeHtml(item.Url || "")}">✓ 已保存 · 全文 ${dist.length} 字 · 开始学习 →</button>`
+      ? `<button class="distill-badge" data-learn="${escapeHtml(item.Url || "")}">${escapeHtml(readingAction(item.Url, dist.length))}</button>`
       : `<button class="go-distill" data-godistill="${escapeHtml(dKey)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5C8.5 3.5 5 3.5 3 4.5v14c2-1 5.5-1 9 1 3.5-2 7-2 9-1v-14c-2-1-5.5-1-9 1Z"/><path d="M12 5.5v14M6 8h3M15 8h3"/></svg> 保存全文</button>`;
     const labels = ["approval", "richness", "credibility"].map((kind) => {
       const metric = m[kind] || {};
@@ -321,7 +354,7 @@
         if (e.target.closest("a, button")) return;   // 链接与按钮各自处理
         const url = card.getAttribute("data-url") || "";
         if (!url) return;
-        if (distilledMap[normKey(url)]) location.href = "/reading.html?url=" + encodeURIComponent(url);
+        if (distilledMap[normKey(url)]) location.href = readingHref(url);
         else window.open(url, "_blank", "noopener");
       });
     });
@@ -329,7 +362,7 @@
     container.querySelectorAll("[data-learn]").forEach((btn) => {
       const go = (e) => {
         e.preventDefault();
-        location.href = "/reading.html?url=" + encodeURIComponent(btn.getAttribute("data-learn") || "");
+        location.href = readingHref(btn.getAttribute("data-learn") || "");
       };
       btn.addEventListener("click", go);
     });
@@ -586,8 +619,8 @@
       }
       allItems = data.items || [];
       page = 1;
-      // 拉取"已保存"索引（书签送进来的全文标记）
-      await refreshDistilled();
+      // 已保存状态与学习位置一起取回：卡片三个入口都接到上次读到的段落
+      await Promise.all([refreshDistilled(), refreshHistoryMap()]);
       const meta = data.favlist || {};
       if (meta.UrlToken != null) currentToken = String(meta.UrlToken);
       els.favlistTitle.innerHTML = `${escapeHtml(meta.Title || "我的收藏")} <span class="count" id="count-badge">${data.count} 条</span>`;
@@ -637,6 +670,7 @@
     const params = new URLSearchParams(location.search);
     const canRead = status.authorized || status.self_mode;
     const savedUrl = params.get("saved");
+    const requestedFavlist = params.get("favlist");
     if (params.get("oauth") === "error") {
       showHome();
       return;
@@ -660,7 +694,7 @@
     }
     showView("collections");
     await loadFavlists();
-    await loadCollections(null, false);
+    await loadCollections(requestedFavlist, false);
   }
 
   // ---- 智能推荐：基于收藏画像的公共学习内容 ----
@@ -677,10 +711,10 @@
       ? `<img class="author-badge" src="${escapeHtml(item.AuthorBadge)}" alt="">`
       : "";
     const actionHtml = dist
-      ? `<button class="distill-badge" data-learn="${escapeHtml(item.Url || "")}">✓ 已保存 · 全文 ${dist.length} 字 · 开始学习 →</button>`
+      ? `<button class="distill-badge" data-learn="${escapeHtml(item.Url || "")}">${escapeHtml(readingAction(item.Url, dist.length))}</button>`
       : `<button class="go-distill" data-godistill="${escapeHtml(key)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5C8.5 3.5 5 3.5 3 4.5v14c2-1 5.5-1 9 1 3.5-2 7-2 9-1v-14c-2-1-5.5-1-9 1Z"/><path d="M12 5.5v14M6 8h3M15 8h3"/></svg> 保存全文</button>`;
     const titleHtml = dist
-      ? `<a class="card-title" href="/reading.html?url=${encodeURIComponent(item.Url || "")}">${escapeHtml(item.Title || "（无标题）")}</a>`
+      ? `<a class="card-title" href="${readingHref(item.Url)}">${escapeHtml(item.Title || "（无标题）")}</a>`
       : `<a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>`;
     return `
       <article class="card" data-url="${escapeHtml(item.Url || "")}" data-title="${escapeHtml(item.Title || "")}">
@@ -717,7 +751,7 @@
     const nextBatch = batch == null ? recommendBatch : batch;
     setRecoState("Loading");
     try {
-      await refreshDistilled();
+      await Promise.all([refreshDistilled(), refreshHistoryMap()]);
       const query = [];
       if (nextBatch) query.push("batch=" + nextBatch);
       if (force) query.push("force=1");
@@ -767,10 +801,16 @@
   // ---- 事件 ----
   els.sidebarToggle.addEventListener("click", () => els.page.classList.add("sidebar-collapsed"));
   els.sidebarExpand.addEventListener("click", () => els.page.classList.remove("sidebar-collapsed"));
-  // 「我的收藏」：进入收藏视图并展开收藏夹列表
+  // 「我的收藏」：从其他视图进入时展开；已在收藏视图时正常切换开合
   els.favParent.addEventListener("click", () => {
-    els.favGroup.classList.add("open");
+    const enteringCollections = els.viewCollections.hidden;
     showView("collections");
+    if (enteringCollections) {
+      els.favGroup.classList.add("open");
+    } else {
+      els.favGroup.classList.toggle("open");
+    }
+    els.favParent.setAttribute("aria-expanded", String(els.favGroup.classList.contains("open")));
   });
   els.sortSelect.addEventListener("change", () => {
     sortMode = els.sortSelect.value;
@@ -815,6 +855,7 @@
     if (!sub) return;
     try {
       const data = await api("/api/reading/history");
+      setHistoryMap(data.items || []);
       histItems = (data.items || []).slice(0, 8);
       if (histItems.length) histListLoaded = true;   // 空列表不记「已加载」，下次展开重新请求
       renderHistList();
@@ -845,6 +886,7 @@
     try {
       await api("/api/reading/history?url=" + encodeURIComponent(url), { method: "DELETE" });
       histItems = histItems.filter((it) => it.url !== url);
+      delete historyMap[normKey(url)];
       renderHistList();
       // 这篇的全文已被重置：收藏列表的卡片要一起回到「🧪 去保存全文」。
       // 两个视图都重绘（切视图只是显隐切换、不重绘，这里不重绘的话卡片会一直显示旧状态）
@@ -1033,8 +1075,109 @@
     await checkDistilledUpdates();
   });
 
+  // 从精读页按浏览器返回时，页面可能直接从内存恢复；重新取进度，避免卡片停在旧段落。
+  window.addEventListener("pageshow", async (event) => {
+    if (!event.persisted) return;
+    await refreshHistoryMap();
+    if (els.viewCollections && !els.viewCollections.hidden && allItems.length) renderCards();
+    if (els.viewRecommend && !els.viewRecommend.hidden && recommendItems.length) renderRecommendCards();
+  });
+
   // 开发调试入口（本地预览用）
   window.__kd = { boot, loadCollections, get items() { return allItems; } };
 
-  boot();
+  const TUTORIAL_ARTICLE = {
+    Url: "#tutorial-example",
+    Title: "教程示例：如何把收藏真正读懂？",
+    Summary: "收藏只是起点。把长文章拆成更小的段落，再针对不理解的句子补充背景、展开推理，才能逐步形成自己的理解。",
+    ContentType: "article",
+    Author: { Name: "知识蒸馏站" },
+    FavTime: 0,
+    FavoriteCount: 1280,
+    LikeCount: 2360,
+    CommentCount: 86,
+    metrics: {
+      approval: { score: 88, basis: ["收藏与赞同"] },
+      richness: { score: 82, basis: ["内容结构与信息密度"] },
+      credibility: { score: 76, basis: ["来源与表达完整度"] },
+    },
+  };
+
+  function showTutorialArticle() {
+    showView("collections");
+    let host = document.getElementById("tutorial-demo-cards");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "tutorial-demo-cards";
+      host.className = "cards tutorial-demo-cards";
+      els.cards.parentNode.insertBefore(host, els.cards);
+    }
+    host.innerHTML = cardHtml(TUTORIAL_ARTICLE);
+    const card = host.querySelector(".card");
+    if (card) {
+      card.id = "tutorial-demo-card";
+      card.classList.add("tutorial-demo-card");
+      card.querySelectorAll("a, button").forEach((control) => {
+        control.tabIndex = -1;
+        control.setAttribute("aria-disabled", "true");
+      });
+    }
+    els.viewCollections.classList.add("tutorial-example-active");
+  }
+
+  function hideTutorialArticle() {
+    if (els.viewCollections) els.viewCollections.classList.remove("tutorial-example-active");
+    const host = document.getElementById("tutorial-demo-cards");
+    if (host) host.remove();
+  }
+
+  function registerStationTutorial() {
+    if (!window.KDTutorial) return;
+    window.KDTutorial.register({
+      id: "station-basics",
+      version: 2,
+      autoStart: true,
+      delay: 180,
+      steps: [
+        {
+          target: ".home-hero",
+          beforeShow: () => { hideTutorialArticle(); showHome(); },
+          title: "欢迎来到知识蒸馏站",
+          description: "这里会把你收藏过的知乎内容整理成一条可继续的学习路径。先选文章，再保存全文，最后逐段读懂。",
+        },
+        {
+          target: ["#fav-parent", "#view-collections"],
+          beforeShow: () => { hideTutorialArticle(); showView("collections"); },
+          title: "从我的收藏开始",
+          description: "这里同步你的知乎收藏夹。选择一个收藏夹，就能浏览其中的文章和回答。",
+        },
+        {
+          target: "#tutorial-demo-card",
+          beforeShow: showTutorialArticle,
+          title: "先判断哪篇值得读",
+          description: "每张卡片会展示认可度、信息量和准确性，帮你快速判断。",
+        },
+        {
+          target: ".home-bookmark",
+          beforeShow: () => { hideTutorialArticle(); showHome(); },
+          title: "第一次先安装保存书签",
+          description: "把“保存这篇文章”拖到浏览器书签栏。以后在知乎文章页点一下，就能把完整正文送回这里。",
+        },
+        {
+          target: "#hist-parent",
+          title: "从学习记录接着读",
+          description: "读过的文章和段落进度都会留在这里。下次点开时，会回到上次停下的位置。",
+        },
+        {
+          target: "#nav-recommend",
+          title: "也可以看看智能推荐",
+          description: "智能推荐会参考你的收藏兴趣，补充适合继续学习的公共内容。现在可以去挑第一篇文章了。",
+        },
+      ],
+      onFinish: () => { hideTutorialArticle(); showView("collections"); },
+      onDismiss: hideTutorialArticle,
+    });
+  }
+
+  boot().finally(registerStationTutorial);
 })();

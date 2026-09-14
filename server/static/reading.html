@@ -5,14 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>精读 · 知识蒸馏站</title>
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="/style.css?v=2">
+  <link rel="stylesheet" href="/style.css?v=5">
   <script src="/bg.js?v=2" defer></script>
   <style>
     /* ===== 精读会话（设计见 docs/学习会话设计-定稿.md） ===== */
     body.reading { padding: 20px; }
     .reading .page { max-width: 1240px; }
-    .reading .content { padding: 16px var(--content-pad); }
-    .rd { width: 100%; }
+    .reading .content { display: flex; padding: 16px var(--content-pad); }
+    .rd { display: flex; flex-direction: column; width: 100%; }
+    #rd-start { flex: 1; justify-content: center; min-height: 300px; }
+    #rd-start-error { max-width: 520px; overflow-wrap: anywhere; }
+    #rd-start-actions { flex-wrap: wrap; justify-content: center; }
+    #rd-start-actions a { text-decoration: none; }
+    .rd:has(#rd-start:not([hidden])) > .rd-head,
+    .rd:has(#rd-start:not([hidden])) > .rd-author { display: none; }
 
     /* 顶栏 */
     .rd-head { display: flex; align-items: center; gap: 14px; margin: 0 2px 8px; }
@@ -305,12 +311,18 @@
             </span>
           </button>
 
-          <button class="nav-item nav-parent" id="fav-parent">
-            <span class="left">
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><polygon points="12,5 19,16 5,16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-              我的收藏
-            </span>
-          </button>
+          <div class="nav-group" id="fav-group">
+            <button class="nav-item nav-parent" id="fav-parent" aria-expanded="false">
+              <span class="left">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><polygon points="12,5 19,16 5,16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+                我的收藏
+              </span>
+              <svg class="chevron" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><polyline points="7,10 12,15 17,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="nav-sub" id="fav-sub">
+              <div class="nav-sub-loading">展开后加载……</div>
+            </div>
+          </div>
 
           <button class="nav-item nav-parent" id="nav-recommend">
             <span class="left">
@@ -333,6 +345,10 @@
           </div>
         </nav>
 
+        <button class="tutorial-replay" type="button" data-tutorial-start="reading-basics">
+          <span class="tutorial-help-icon" aria-hidden="true">?</span>
+          <span>精读引导</span>
+        </button>
         <div class="user-block" id="user-block">
           <span class="nav-avatar" id="user-avatar">·</span>
           <div class="user-meta">
@@ -361,15 +377,15 @@
       <span class="rd-author-title" id="rd-author-title" hidden></span>
     </div>
 
-    <!-- 开始卡 -->
-    <div class="rd-body" id="rd-start" style="display:block">
-      <p class="rd-pane-label">粘贴一篇已保存文章的知乎链接，开始逐段精读</p>
-      <div class="rd-input-row" style="margin:10px 0">
-        <input id="rd-url" placeholder="https://zhuanlan.zhihu.com/p/..." autocomplete="off">
-        <button class="rd-btn" id="rd-open">开始</button>
+    <!-- 文章加载 -->
+    <div class="state-box" id="rd-start">
+      <div class="spinner" id="rd-spinner" aria-hidden="true"></div>
+      <p id="rd-loading" role="status">加载中…</p>
+      <div class="rd-error" id="rd-start-error" role="alert"></div>
+      <div class="rd-nav" id="rd-start-actions" hidden>
+        <button class="rd-btn" id="rd-open">重试</button>
+        <a class="rd-btn ghost" href="/">返回收藏夹</a>
       </div>
-      <div class="rd-hint">首次打开会现场划分段落并生成第一段解释（约 10~30 秒），之后缓存复用。</div>
-      <div class="rd-error" id="rd-start-error" style="margin-top:8px"></div>
     </div>
 
     <!-- 会话 -->
@@ -480,9 +496,12 @@
     </main>
   </div>
 
+  <button class="tutorial-mobile-replay" type="button" data-tutorial-start="reading-basics" aria-label="打开精读引导">?</button>
+
   <!-- 公式渲染：KaTeX 本地化（server/static/vendor/katex）+ 识别与偏移映射（math.js） -->
   <script src="/vendor/katex/katex.min.js"></script>
   <script src="/math.js?v=2"></script>
+  <script src="/tutorial.js?v=1"></script>
   <script>
     (() => {
       "use strict";
@@ -498,6 +517,41 @@
         answerNodeId: null,   // 正在回答卡片里展示的提问节点（对话区去重用）
       };
 
+
+      let readingTutorialStarted = false;
+      if (window.KDTutorial) {
+        window.KDTutorial.register({
+          id: "reading-basics",
+          version: 1,
+          steps: [
+            {
+              target: ".rd-head",
+              title: "一篇文章会被拆成小段",
+              description: "你一次只需要读懂当前这一段。标题可以点回知乎原文，右上角还能在内容抓错时重新保存。",
+            },
+            {
+              target: "#rd-text",
+              title: "左边是本段原文",
+              description: "先读原文。遇到不理解的句子，可以直接在文字上划选，系统会围绕选中的内容补充解释。",
+            },
+            {
+              target: "#rd-explain",
+              title: "右边先补背景和推理",
+              description: "这里会补齐文章默认你已经知道的知识，并把作者跳过的推理步骤展开。",
+            },
+            {
+              target: "#rd-question",
+              title: "哪里没懂，就继续追问",
+              description: "你可以直接输入问题，也可以先划选原文再提问。回答和标记都会保存在这篇文章里。",
+            },
+            {
+              target: ".rd-nav-row",
+              title: "读懂后进入下一段",
+              description: "点击“我懂了”继续，或点中间的段落进度自由跳转。完成后可以从学习记录随时回来复习。",
+            },
+          ],
+        });
+      }
       const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
         ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -881,6 +935,10 @@
       }
 
       function renderSegment(payload) {
+        $("rd-body-main").hidden = false;
+        $("rd-ask-area").hidden = false;
+        $("rd-right-label").hidden = false;
+        $("rd-finish").hidden = true;
         clearAnswer();   // 换段时收起回答
         state.seg = payload;
         state.segNodes = payload.nodes || [];
@@ -891,6 +949,10 @@
         renderProgress();
         renderActiveTab();   // 换段：不重置滚动（用户可自行滚动）
         preloadSegment(payload.index + 1);   // 预加载下一段的解释，消除「我懂了」后的等待
+        if (!readingTutorialStarted && window.KDTutorial) {
+          readingTutorialStarted = true;
+          requestAnimationFrame(() => window.KDTutorial.start("reading-basics"));
+        }
       }
 
       // 预加载：进入本段后，后台静默生成下一段的初始解释（服务端按段懒生成 + 缓存）
@@ -966,9 +1028,16 @@
       async function openArticle(url, startSeg) {
         const gen = ++articleGen;
         state.prefetch = {};   // 换文章：清空上一批预加载的段落
+        $("rd-start").hidden = false;
+        $("rd-session").hidden = true;
+        $("rd-spinner").hidden = false;
+        $("rd-loading").hidden = false;
+        $("rd-loading").textContent = "加载中…";
         $("rd-start-error").textContent = "";
+        $("rd-start-actions").hidden = true;
+        $("rd-open").hidden = false;
         $("rd-open").disabled = true;
-        $("rd-url").disabled = true;
+        $("rd-open").onclick = () => openArticle(url, startSeg);
         try {
           const data = await api("/api/reading/open", {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -990,9 +1059,13 @@
         } catch (err) {
           if (gen !== articleGen) return;   // 期间已切换文章：不显示旧错误
           $("rd-start-error").textContent = err.message
-            + (err.code === "NOT_DISTILLED" ? "（先在收藏列表里点「去保存全文」）" : "");
+            + (err.code === "NOT_DISTILLED" ? "（先在收藏列表里点「保存全文」）" : "");
+          $("rd-start").hidden = false;
+          $("rd-session").hidden = true;
+          $("rd-spinner").hidden = true;
+          $("rd-loading").hidden = true;
+          $("rd-start-actions").hidden = false;
           $("rd-open").disabled = false;
-          $("rd-url").disabled = false;
         }
       }
 
@@ -1393,12 +1466,6 @@
       }
 
       // ---------- 事件 ----------
-      $("rd-open").addEventListener("click", () => {
-        const url = $("rd-url").value.trim();
-        if (!url) { $("rd-start-error").textContent = "请先粘贴知乎链接。"; return; }
-        openArticle(url);
-      });
-      $("rd-url").addEventListener("keydown", (e) => { if (e.key === "Enter") $("rd-open").click(); });
       $("rd-ask").addEventListener("click", submit);
       $("rd-question").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
       $("rd-done").addEventListener("click", understood);
@@ -1569,15 +1636,48 @@
         }
       }
 
+      // ---------- 收藏夹下拉（学习页可直接进入指定收藏夹） ----------
+      let favCache = null;
+      function renderFavList(items) {
+        const sub = $("fav-sub");
+        if (!sub) return;
+        if (!items.length) {
+          sub.innerHTML = '<div class="nav-sub-loading">没有可用的收藏夹</div>';
+          return;
+        }
+        sub.innerHTML = items.map((it) => {
+          const token = String(it.UrlToken || "");
+          const href = "/?favlist=" + encodeURIComponent(token);
+          return '<a class="nav-subitem" href="' + href + '">' + esc(it.Title || "未命名收藏夹") + "</a>";
+        }).join("");
+      }
+      async function loadFavList() {
+        const sub = $("fav-sub");
+        if (!sub) return;
+        if (favCache) { renderFavList(favCache); return; }
+        sub.innerHTML = '<div class="nav-sub-loading">加载中……</div>';
+        try {
+          const data = await api("/api/favlists");
+          favCache = data.items || [];
+          renderFavList(favCache);
+        } catch (err) {
+          sub.innerHTML = '<div class="nav-sub-loading">' + esc(err.message || "加载失败") + "</div>";
+        }
+      }
+
       // ---------- 侧边栏（与首页一致：折叠 + 导航 + 用户状态） ----------
       (function initSidebar() {
         const page = $("page");
         const toggle = $("sidebar-toggle");
         if (toggle && page) toggle.addEventListener("click", () => page.classList.toggle("sidebar-collapsed"));
         const go = (path) => { location.href = path; };
-        const home = $("nav-home"), fav = $("fav-parent"), reco = $("nav-recommend");
+        const home = $("nav-home"), fav = $("fav-parent"), favGroup = $("fav-group"), reco = $("nav-recommend");
         if (home) home.addEventListener("click", () => go("/"));
-        if (fav) fav.addEventListener("click", () => go("/"));
+        if (fav && favGroup) fav.addEventListener("click", () => {
+          const isOpen = favGroup.classList.toggle("open");
+          fav.setAttribute("aria-expanded", String(isOpen));
+          if (isOpen) loadFavList();
+        });
         if (reco) reco.addEventListener("click", () => go("/"));
         // 学习记录：默认展开，点击标题可收起/展开；展开时刷新列表
         const histParent = $("hist-parent"), histGroup = $("hist-group");
@@ -1602,7 +1702,7 @@
               targetSeg = Number(pu.searchParams.get("seg")) || 0;
             } catch (err) { location.href = a.href; return; }
             history.replaceState(null, "", a.getAttribute("href"));
-            if (histNormKey(targetUrl) === histNormKey(state.url)) {
+            if ($("rd-start").hidden && histNormKey(targetUrl) === histNormKey(state.url)) {
               goSegment(targetSeg);                  // 同一篇：直接跳到记录的那一段
             } else {
               openArticle(targetUrl, targetSeg);     // 换一篇：原地打开
@@ -1628,7 +1728,14 @@
       const params = new URLSearchParams(location.search);
       const preset = params.get("url");
       const startSeg = parseInt(params.get("seg") || "0", 10) || 0;
-      if (preset) { $("rd-url").value = preset; openArticle(preset, startSeg); }
+      if (preset) {
+        openArticle(preset, startSeg);
+      } else {
+        $("rd-spinner").hidden = true;
+        $("rd-loading").textContent = "请从收藏夹或学习记录中选择一篇文章。";
+        $("rd-start-actions").hidden = false;
+        $("rd-open").hidden = true;
+      }
     })();
   </script>
 </body>

@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""配图地址白名单：配图由服务端抓取，放开域名等于把 /api/ingest 变成 SSRF 抓取器"""
+"""配图地址白名单及带图文章保存：图片 URL 不能覆盖文章键"""
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import main
 from core.zhihu import clean_image_url as _clean_image_url
 
 
@@ -38,3 +43,33 @@ def test_is_image_url_detects_image_hosts():
     assert not is_image_url("https://evil.com/zhimg.com/x.jpg")
     assert not is_image_url("")
     assert not is_image_url(None)
+
+
+def test_ingest_images_keep_article_url_as_storage_key(monkeypatch):
+    article_url = "https://www.zhihu.com/answer/123456789"
+    cases = [
+        [{"url": "https://pic1.zhimg.com/v2-valid.jpg", "pos": 12}],
+        [
+            {"url": "https://pic1.zhimg.com/v2-valid.jpg", "pos": 12},
+            {"url": "https://evil.com/not-allowed.jpg", "pos": 24},
+        ],
+    ]
+    for images in cases:
+        get = AsyncMock(return_value=None)
+        upsert = AsyncMock()
+        monkeypatch.setattr(main.store, "get", get)
+        monkeypatch.setattr(main.store, "upsert", upsert)
+        monkeypatch.setattr(main.store, "count", AsyncMock(return_value=1))
+        request = SimpleNamespace(json=AsyncMock(return_value={
+            "url": article_url,
+            "title": "带图文章",
+            "content": "这是用于验证文章地址不会被配图地址覆盖的正文。" * 10,
+            "images": images,
+        }))
+
+        result = asyncio.run(main.ingest(request))
+
+        assert result["ok"] is True
+        assert get.await_args.args == (article_url,)
+        assert upsert.await_args.args[0] == article_url
+        assert upsert.await_args.args[2] == article_url

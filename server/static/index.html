@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>知识蒸馏站 · 把收藏夹变成学习进度表</title>
-  <link rel="stylesheet" href="/style.css?v=3">
+  <link rel="stylesheet" href="/style.css?v=5">
   <script src="/bg.js?v=2" defer></script>
 </head>
 <body>
@@ -32,7 +32,7 @@
           </button>
 
           <div class="nav-group open" id="fav-group">
-            <button class="nav-item nav-parent" id="fav-parent">
+            <button class="nav-item nav-parent" id="fav-parent" aria-expanded="true">
               <span class="left">
                 <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><polygon points="12,5 19,16 5,16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
                 我的收藏
@@ -66,6 +66,10 @@
           </div>
         </nav>
 
+        <button class="tutorial-replay" type="button" data-tutorial-start="station-basics">
+          <span class="tutorial-help-icon" aria-hidden="true">?</span>
+          <span>新手引导</span>
+        </button>
         <div class="user-block" id="user-block">
           <span class="nav-avatar" id="user-avatar">·</span>
           <div class="user-meta">
@@ -196,6 +200,8 @@
     </main>
   </div>
 
+  <button class="tutorial-mobile-replay" type="button" data-tutorial-start="station-basics" aria-label="打开新手引导">?</button>
+
   <!-- 蒸馏引导浮层：点击「去保存全文」后出现，全文送达后自动点亮 -->
   <div class="distill-guide" id="distill-guide" hidden>
     <button class="gd-close" id="distill-guide-close" aria-label="关闭">×</button>
@@ -214,6 +220,7 @@
     </div>
   </div>
 
-  <script src="/app.js?v=3"></script>
+  <script src="/tutorial.js?v=1"></script>
+  <script src="/app.js?v=5"></script>
 </body>
 </html>
