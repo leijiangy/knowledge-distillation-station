@@ -106,17 +106,13 @@ async def oauth_status(request: Request, response: Response):
 
 
 @app.get("/api/oauth/start")
-async def oauth_start(request: Request, response: Response, next: str = ""):
+async def oauth_start(request: Request, response: Response):
     session = _get_or_create(request, response)
-    # 登录完要落到哪：保存后跳回精读靠它穿过授权流程（默认回到首页）
-    session.next_path = oauth.local_path(next) or None
     try:
         session.state = oauth.new_state()
         session.error = None
         url = oauth.build_authorize_url(session.state)
-        redirect = RedirectResponse(url, status_code=302)
-        _attach_cookie(redirect, session)   # 新建的会话也要把 cookie 带出去
-        return redirect
+        return RedirectResponse(url, status_code=302)
     except oauth.ZhihuError as exc:
         session.error = {"code": str(exc.code), "message": exc.message}
         redirect = RedirectResponse("/?oauth=error", status_code=302)
@@ -150,8 +146,7 @@ async def auth_callback(request: Request):
             session.profile = await oauth.fetch_profile(session.token)
         except oauth.ZhihuError:
             session.profile = None  # 资料获取失败不阻断登录
-        redirect = RedirectResponse(session.next_path or "/?oauth=success", status_code=302)
-        session.next_path = None
+        redirect = RedirectResponse("/?oauth=success", status_code=302)
         _attach_cookie(redirect, session)
         return redirect
     except oauth.ZhihuError as exc:
@@ -335,24 +330,30 @@ async def ingest(request: Request):
     title = str(body.get("title") or "").strip()[:200]
     content = str(body.get("content") or "").strip()
     images = body.get("images") or []
-    # 图片地址要排在前面判：zhimg.com 不含子串 zhihu.com，否则会被下一条笼统地拦掉
+    if not url or "zhihu.com" not in url:
+        return {"ok": False, "error": {"code": "BAD_URL", "message": "需要知乎内容链接。"}}
     if zhihu.is_image_url(url):
         return {"ok": False, "error": {
             "code": "BAD_URL",
             "message": "这是图片地址而不是文章页（可能点开了大图）：请回到文章页面再保存。"}}
-    if not url or "zhihu.com" not in url:
-        return {"ok": False, "error": {"code": "BAD_URL", "message": "需要知乎内容链接。"}}
     if len(content) < 100:
         return {"ok": False, "error": {"code": "TOO_SHORT", "message": "内容过短，可能不是文章页。"}}
     if len(content) > DISTILL_MAX_CHARS:
         return {"ok": False, "error": {"code": "TOO_LONG", "message": "内容过长。"}}
     clean_images: list = []
-    for item in (images[:9] if isinstance(images, list) else []):
-        # 兼容旧书签发来的 {url,pos}：只取图片地址（卡片封面用），不再记正文位置
-        raw = item.get("url") if isinstance(item, dict) else item
-        image_url = zhihu.clean_image_url(raw)
-        if image_url and image_url not in clean_images:
-            clean_images.append(image_url)
+    seen_images: set = set()
+    if isinstance(images, list):
+        for item in images[:9]:
+            # 兼容两种形态：早期只存 URL 字符串；现在带正文里的字符位置
+            raw_url = item.get("url") if isinstance(item, dict) else item
+            url = zhihu.clean_image_url(raw_url)
+            if not url or url in seen_images:
+                continue
+            pos = item.get("pos") if isinstance(item, dict) else None
+            if isinstance(pos, bool) or not isinstance(pos, int) or not (0 <= pos <= len(content)):
+                pos = None      # 位置不可信就当没有：宁可退回文章级展示，也不要锚错地方
+            seen_images.add(url)
+            clean_images.append({"url": url, "pos": pos})
     key = _norm_key(url)
     existing = await store.get(key)
     if existing is not None:
@@ -526,7 +527,8 @@ async def _ensure_init_explain(item: dict, key: str, seg_index: int, seg_text: s
 
 async def _segment_payload(item: dict, key: str, summary: str, cuts: list,
                            index: int, uid: str):
-    seg_text, total, _seg_start = segments.split_at_cuts(item["content"], cuts, index)
+    seg_text, total, seg_images = segments.segment_slice(
+        item["content"], cuts, index, item.get("images"))
     if seg_text is None:
         return None, total
     init_node = await _ensure_init_explain(item, key, index, seg_text, summary, uid)
@@ -538,6 +540,7 @@ async def _segment_payload(item: dict, key: str, summary: str, cuts: list,
         "explain": (init_node or {}).get("content", ""),
         "explain_id": (init_node or {}).get("id"),
         "nodes": nodes,
+        "images": seg_images,
     }, total
 
 
@@ -584,7 +587,8 @@ async def reading_open(request: Request):
     await reading_store.append_event(key, uid, "open", 0, None)
     return {"ok": True,
             "article": {"key": key, "title": item["title"], "summary": summary, "total": total,
-                        "author": _author_from_collections(uid, key)},
+                        "author": _author_from_collections(uid, key),
+                        "images": item.get("images") or []},
             "segment": payload}
 
 
@@ -761,6 +765,47 @@ async def reading_ask(request: Request):
     if node is None:
         return {"ok": False, "error": {"code": "CONFLICT", "message": "保存失败，请重试。"}}
     return {"ok": True, "node": node}
+
+
+@app.post("/api/reading/image")
+async def reading_image(request: Request):
+    """解释原文配图：按图片 URL 全局缓存（同一张图只生成一次，省额度）"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "请求体不是合法 JSON。"}}
+    item, key, uid, error = await _reading_context(request, str(body.get("url") or ""))
+    if error:
+        return {"ok": False, "error": error}
+    image = zhihu.clean_image_url(body.get("image"))
+    if not image:
+        return {"ok": False, "error": {"code": "BAD_IMAGE", "message": "配图地址不合法。"}}
+    # 只解释这篇文章自己的配图：否则接口会变成任意图片的抓取+解释入口
+    if image not in segments.image_urls(item.get("images")):
+        return {"ok": False, "error": {"code": "BAD_IMAGE", "message": "这张图不属于这篇文章。"}}
+    try:
+        cached = await reading_store.get_image_explanation(image)
+    except Exception as exc:
+        print(f"[reading] 读取配图解释失败：{exc}")
+        return {"ok": False, "error": {
+            "code": "DB_FAILED",
+            "message": "配图解释的存储不可用（需要在数据库建 image_explanations 表，见设计文档 7.2）。"}}
+    if cached:
+        return {"ok": True, "image": image, "explain": cached, "cached": True}
+    # 上下文由服务端按抓取时记录的位置取：图片就插在这两段之间
+    before, after = segments.image_context(item.get("content") or "",
+                                   segments.image_pos(item.get("images"), image))
+    try:
+        data_url = await ai.fetch_image_data_url(image)
+        explain = await ai.explain_image(item["title"], item.get("summary") or "",
+                                         before, after, data_url)
+    except ai.AIError as exc:
+        return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
+    try:
+        await reading_store.save_image_explanation(image, explain)
+    except Exception as exc:
+        print(f"[reading] 保存配图解释失败：{exc}")   # 存不下也要把结果给用户
+    return {"ok": True, "image": image, "explain": explain, "cached": False}
 
 
 @app.post("/api/reading/event")

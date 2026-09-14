@@ -72,18 +72,33 @@
       "var canon=document.querySelector('link[rel=canonical]')||document.querySelector('meta[property=\"og:url\"]');",
       "var pageUrl=((canon&&(canon.href||canon.content))||location.href).split('#')[0];",
       "if(/\\.zhimg\\.com/.test(pageUrl.split('/')[2]||'')){alert('当前地址是图片地址（可能是点开了大图）：请回到文章页面再点这个书签。');return;}",
-      // 配图只取地址（卡片封面用），不记录正文位置
-      "var imgs=[];var list=el.querySelectorAll('img');",
-      "for(var i=0;i<list.length&&imgs.length<3;i++){",
+      // 配图：先在每张图前插一个不可见标记，innerText 会把标记放在图片真实位置上，
+      // 由此得到图片在正文里的字符下标；读完再把标记从文本和 DOM 里清掉（正文逐字不变）
+      "var seen=[];var picked=[];var list=el.querySelectorAll('img');",
+      "for(var i=0;i<list.length&&picked.length<9;i++){",
       "var im=list[i];var cls=String(im.className||'');",
       "if(/avatar|emoji|icon|badge|logo|symbol|sticker/i.test(cls))continue;",
       "var s=im.currentSrc||im.getAttribute('src')||im.getAttribute('data-original')||im.getAttribute('data-actualsrc')||'';",
       "if(!s||s.indexOf('zhimg.com')<0)continue;",
       "if(im.naturalWidth&&im.naturalWidth<200)continue;",
       "s=s.split('?')[0];",
-      "if(imgs.indexOf(s)<0)imgs.push(s);",
+      "if(seen.indexOf(s)>=0)continue;seen.push(s);",
+      "var tok='\\u2063K'+picked.length+'\\u2063';",
+      "var node=document.createTextNode(tok);",
+      "im.parentNode.insertBefore(node,im);",
+      "picked.push({url:s,tok:tok,node:node});",
       "}",
-      "var text=(el.innerText||'').trim();",
+      "var raw=el.innerText||'';",
+      "var lead=raw.length-raw.replace(/^\\s+/,'').length;",
+      "var text=raw.slice(lead).replace(/\\u2063K\\d+\\u2063/g,'').replace(/\\s+$/,'');",
+      "var imgs=[];var drop=0;",
+      "for(var j=0;j<picked.length;j++){",
+      "var p=picked[j];var at=raw.indexOf(p.tok);",
+      "if(p.node.parentNode)p.node.parentNode.removeChild(p.node);",
+      "if(at<0)continue;",
+      "var pos=at-lead-drop;drop+=p.tok.length;",
+      "if(pos>=0&&pos<=text.length)imgs.push({url:p.url,pos:pos});",
+      "}",
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
       "if(!confirm('保存这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
       "var fromStation=location.hash.indexOf('kd=1')>=0;",
@@ -611,24 +626,18 @@
 
     const params = new URLSearchParams(location.search);
     const canRead = status.authorized || status.self_mode;
-    const savedUrl = params.get("saved");
     if (params.get("oauth") === "error") {
       showHome();
       return;
     }
     if (!canRead) {
       // 默认授权：能走 OAuth 就直接发起（用户进入即授权，无需点按钮）；本地预览模式停在首页
-      if (status.callback_configured) {
-        // 保存后跳回（?saved=）要把目标一起带上：否则会被这次授权跳转吃掉，
-        // 登录完只落回首页，用户看到的就是"保存了却没跳转"
-        const next = savedUrl ? "/reading.html?url=" + encodeURIComponent(savedUrl) : "";
-        location.href = "/api/oauth/start" + (next ? "?next=" + encodeURIComponent(next) : "");
-        return;
-      }
+      if (status.callback_configured) { location.href = "/api/oauth/start"; return; }
       showHome();
       return;
     }
     // 保存完成跳回（?saved=文章地址）：直接进入该篇的学习
+    const savedUrl = params.get("saved");
     if (savedUrl) {
       location.href = "/reading.html?url=" + encodeURIComponent(savedUrl);
       return;
