@@ -2,16 +2,177 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
   <title>知识蒸馏站 · 把收藏夹变成学习进度表</title>
-  <link rel="stylesheet" href="/style.css?v=8">
-  <script src="/bg.js?v=2" defer></script>
-</head>
+  <script src="/bg.js?v=5"></script>
+  <link rel="stylesheet" href="/style.css?v=14"></head>
 <body>
   <canvas id="bg-canvas" aria-hidden="true"></canvas>
-  <div class="page" id="page">
+  <!-- 首次访问产品介绍：示例独立于收藏与精读数据 -->
+  <div id="product-intro" class="product-intro" tabindex="0" role="region" aria-label="产品介绍，上下滑动逐页浏览" hidden>
+    <header class="intro-header">
+      <a class="intro-brand" href="#intro-scene-1" aria-label="知识蒸馏站，返回产品介绍开头">
+        <span class="intro-brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m12 4 8 14H4Z"/><circle cx="12" cy="4" r="1.5" fill="currentColor"/><circle cx="20" cy="18" r="1.5" fill="currentColor"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/></svg></span>
+        <span>知识蒸馏站<small>产品介绍</small></span>
+      </a>
+      <nav class="intro-scene-nav" aria-label="产品介绍章节">
+        <a href="#intro-scene-1" aria-label="第一幕：原文与解释"><span></span></a>
+        <a href="#intro-scene-2" aria-label="第二幕：追问与任务"><span></span></a>
+        <a href="#intro-scene-3" aria-label="第三幕：逐段精读"><span></span></a>
+        <a href="#intro-scene-4" aria-label="第四幕：分层追问"><span></span></a>
+        <a href="#intro-scene-5" aria-label="第五幕：自测与复习"><span></span></a>
+        <a href="#intro-scene-6" aria-label="第六幕：进入产品"><span></span></a>
+        <span class="intro-position" id="intro-position" aria-hidden="true">01 / 06</span>
+      </nav>
+      <button class="intro-enter intro-enter-small" type="button" data-intro-enter>直接进入 <span aria-hidden="true">↗</span></button>
+    </header>
+    <main class="intro-main">
+      <section class="intro-scene intro-scene-opening" id="intro-scene-1" data-intro-step="1" aria-labelledby="intro-title-1">
+        <div class="intro-scene-grid">
+          <div class="intro-copy">
+            <p class="intro-eyebrow"><span>01</span> 阅读中的信息距离</p>
+            <h1 id="intro-title-1" tabindex="-1">对话不断延长，<br>原文与解释<br><em>逐渐分离</em></h1>
+            <p class="intro-description">多轮交流后，对照原文与讲解，<br class="intro-desktop-break">需要反复翻阅聊天记录。</p>
+            <a class="intro-scroll-cue" href="#intro-scene-2"><span class="intro-scroll-line" aria-hidden="true"></span>向下滑动，逐页了解 <span aria-hidden="true">↓</span></a>
+          </div>
+          <div class="intro-chat-stage" aria-label="演示：原文与对应解释被多轮讨论分隔">
+            <div class="intro-window intro-chat-window">
+              <div class="intro-window-bar"><span class="intro-window-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>一段普通的 AI 对话</span><span class="intro-example">演示</span></div>
+              <div class="intro-chat-body">
+                <div class="intro-message intro-message-user"><span class="intro-message-label">粘贴原文</span><b>相关性为什么不等于因果关系？</b><p>夏季冰淇淋销量与溺水事件都在增加，但两者同时变化，并不能证明前者导致后者……</p></div>
+                <div class="intro-message intro-message-ai intro-message-faded"><span class="intro-message-label">首次讲解</span><div class="intro-text-line"></div><div class="intro-text-line intro-line-short"></div></div>
+                <div class="intro-chat-distance"><span></span><p>追问 · 背景补充 · 举例<br><b>6 轮讨论之后</b></p><span></span></div>
+                <div class="intro-message intro-message-ai"><span class="intro-message-label">当前解释</span><p>因此，需要进一步区分变量之间的关联，与真正的因果作用。</p></div>
+                <div class="intro-chat-input">这里对应原文的哪一段？ <span aria-hidden="true">↑</span></div>
+              </div>
+            </div>
+            <div class="intro-margin-note"><span aria-hidden="true">↟</span> 返回原文，需要向上翻阅</div>
+          </div>
+        </div>
+        <div class="intro-scene-footer"><span>从普通对话中的阅读体验开始</span><span>01 — 06</span></div>
+      </section>
+
+      <section class="intro-scene" id="intro-scene-2" data-intro-step="2" aria-labelledby="intro-title-2">
+        <div class="intro-scene-grid intro-grid-reverse">
+          <div class="intro-copy">
+            <p class="intro-eyebrow"><span>02</span> 讨论中的学习路径</p>
+            <h2 id="intro-title-2">追问持续展开，<br>学习路径<br><em>难以回溯</em></h2>
+            <p class="intro-description">背景补充、延伸讨论与练习穿插在同一段对话中。问题之间的关联逐渐模糊，继续学习需要重新定位。</p>
+            <p class="intro-insight">阅读需要清晰的内容关联<br>与学习路径。</p>
+          </div>
+          <div class="intro-thread-stage" aria-label="演示：理解原文、延伸讨论和自测交错在一条聊天记录中">
+            <div class="intro-source-note"><span class="intro-message-label">最初的阅读目标</span><b>理解「相关性与因果关系」</b><span class="intro-example">演示</span></div>
+            <ol class="intro-thread-list">
+              <li><span class="intro-thread-node"></span><span>解释这个概念</span><small>理解原文</small></li>
+              <li><span class="intro-thread-node"></span><span>补充相关背景</span><small>延伸讨论</small></li>
+              <li><span class="intro-thread-node"></span><span>再举一个例子</span><small>延伸讨论</small></li>
+              <li><span class="intro-thread-node"></span><span>根据文章出一道题</span><small>自测</small></li>
+              <li class="intro-thread-return"><span class="intro-thread-node"></span><span>回到刚才的讲解</span><small>重新定位</small></li>
+            </ol>
+            <div class="intro-thread-caption"><span aria-hidden="true">↑</span> 每一次返回，都需要重新寻找上下文</div>
+          </div>
+        </div>
+        <div class="intro-scene-footer"><span>信息有顺序，也需要关联</span><span>02 — 06</span></div>
+      </section>
+
+      <section class="intro-scene intro-scene-reading" id="intro-scene-3" data-intro-step="3" aria-labelledby="intro-title-3">
+        <div class="intro-feature-heading">
+          <div><p class="intro-eyebrow"><span>03</span> 知识蒸馏站 · 逐段精读</p><h2 id="intro-title-3">在原文旁，<em>逐段理解文章</em></h2></div>
+          <p class="intro-description">按语义划分阅读段落，在原文旁查看对应讲解。划选具体内容，进一步理解概念与推理。</p>
+        </div>
+        <div class="intro-window intro-reader-window">
+          <div class="intro-reader-top"><span class="intro-reader-logo">精读</span><span>相关性为什么不等于因果关系？</span><span class="intro-example">界面演示</span></div>
+          <div class="intro-reader-columns">
+            <article class="intro-reader-original"><div class="intro-panel-label">原文 <span>第 2 段 / 共 6 段</span></div><h3>同时发生，不代表彼此导致</h3><p>到了夏天，冰淇淋的销量增加，溺水事件也更频繁。如果只观察这两组数据，似乎会发现它们存在联系。</p><p><mark>共同的原因可能是气温升高，而不是冰淇淋本身。</mark> 炎热的天气既促进了冰淇淋消费，也让更多人去游泳。</p><span class="intro-selection-chip"><svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="m11 2-7 9h5l-1 7 8-10h-5Z" fill="currentColor"/></svg> 划选内容，查看解释</span></article>
+            <article class="intro-reader-explanation"><div class="intro-panel-label">对应讲解 <span class="intro-green-dot">与原文对照</span></div><h3>理解「共同原因」</h3><p>气温是同时影响两个现象的第三个因素。看到它们一起变化，还不足以判断其中一个导致了另一个。</p><div class="intro-cause-diagram"><span>气温升高</span><div aria-hidden="true">↙<i></i>↘</div><div><span>冰淇淋销量增加</span><span>游泳人数增加</span></div></div><p class="intro-reader-note">分析因果关系时，需要考虑这种共同原因。</p></article>
+          </div>
+          <div class="intro-reader-bottom"><span class="intro-segment-progress"><i></i><i class="intro-current"></i><i></i><i></i><i></i><i></i></span><span>原文与解释，保持在同一个阅读空间</span><span class="intro-demo-control">我懂了 →</span></div>
+        </div>
+        <div class="intro-feature-footnotes"><span><b>01</b> 按段落组织内容</span><span><b>02</b> 原文与解释对照</span><span><b>03</b> 聚焦具体疑点</span></div>
+        <div class="intro-scene-footer"><span>问题在哪一句，讲解就对应哪一句</span><span>03 — 06</span></div>
+      </section>
+
+      <section class="intro-scene intro-scene-depth" id="intro-scene-4" data-intro-step="4" aria-labelledby="intro-title-4">
+        <div class="intro-scene-grid">
+          <div class="intro-copy">
+            <p class="intro-eyebrow"><span>04</span> 分层追问</p>
+            <h2 id="intro-title-4">保留追问层级，<br><em>随时返回上层</em></h2>
+            <p class="intro-description">针对原文或解释继续提问，按层级保留讨论关系。理解局部疑点后，返回上层解释，继续阅读。</p>
+            <div class="intro-depth-route"><span>原文</span><i aria-hidden="true">→</i><span>解释</span><i aria-hidden="true">→</i><span>深入追问</span></div>
+            <p class="intro-demo-hint"><span aria-hidden="true">↗</span> 点击示例中的按钮，体验展开与返回</p>
+          </div>
+          <div class="intro-window intro-depth-window">
+            <div class="intro-window-bar"><span>相关性与因果关系</span><span class="intro-example">可交互演示</span></div>
+            <div class="intro-depth-levels" aria-label="选择演示的追问层级">
+              <button type="button" data-intro-depth="0" data-intro-level aria-controls="intro-depth-0" aria-pressed="true"><span>01</span> 原文</button><i aria-hidden="true">›</i>
+              <button type="button" data-intro-depth="1" data-intro-level aria-controls="intro-depth-1" aria-pressed="false"><span>02</span> 解释</button><i aria-hidden="true">›</i>
+              <button type="button" data-intro-depth="2" data-intro-level aria-controls="intro-depth-2" aria-pressed="false"><span>03</span> 追问</button>
+            </div>
+            <div class="intro-depth-panels" aria-live="polite">
+              <article class="intro-depth-panel" id="intro-depth-0" data-intro-panel="0">
+                <div class="intro-panel-label">当前阅读 <span>第 2 段</span></div>
+                <h3>同时发生，不代表彼此导致</h3><p>两个现象同时变化，可能源于第三个因素。</p><blockquote>共同的原因可能是气温升高，而不是冰淇淋本身。</blockquote><p class="intro-depth-prompt">对「共同原因」存在疑问？</p>
+                <button class="intro-demo-button" type="button" data-intro-depth="1" aria-controls="intro-depth-1">查看这句话的解释 <span aria-hidden="true">→</span></button>
+              </article>
+              <article class="intro-depth-panel" id="intro-depth-1" data-intro-panel="1" hidden>
+                <div class="intro-panel-label">第一层解释 <span>来自原文的划选内容</span></div>
+                <h3>什么是共同原因？</h3><p>同一个因素，可以同时影响两个看似相关的现象。</p><blockquote>气温升高，让更多人购买冰淇淋，也让更多人选择游泳。</blockquote><p class="intro-depth-prompt">已经理解概念，继续了解如何判断。</p>
+                <div class="intro-demo-actions"><button class="intro-demo-button intro-demo-back" type="button" data-intro-depth="0" aria-controls="intro-depth-0">← 返回原文</button><button class="intro-demo-button" type="button" data-intro-depth="2" aria-controls="intro-depth-2">如何区分？ →</button></div>
+              </article>
+              <article class="intro-depth-panel" id="intro-depth-2" data-intro-panel="2" hidden>
+                <div class="intro-panel-label">第二层追问 <span>来自「共同原因」的解释</span></div>
+                <h3>如何区分相关与因果？</h3><p>先考虑是否存在共同原因，再寻找能排除其他解释的证据。</p><blockquote>例如，在相近气温下比较数据，可以帮助判断气温是否影响了观察到的关联。</blockquote><p class="intro-depth-prompt">理解之后，沿原来的路径继续阅读。</p>
+                <button class="intro-demo-button intro-demo-back" type="button" data-intro-depth="1" aria-controls="intro-depth-1">← 返回上层解释</button>
+              </article>
+            </div>
+            <div class="intro-depth-status"><span class="intro-green-dot">原文位置保留</span><span>深入理解后，继续当前段落</span></div>
+          </div>
+        </div>
+        <div class="intro-scene-footer"><span>展开局部疑问，也保留完整的阅读路径</span><span>04 — 06</span></div>
+      </section>
+
+      <section class="intro-scene" id="intro-scene-5" data-intro-step="5" aria-labelledby="intro-title-5">
+        <div class="intro-scene-grid intro-grid-reverse">
+          <div class="intro-copy">
+            <p class="intro-eyebrow"><span>05</span> 自测与复习</p>
+            <h2 id="intro-title-5">围绕文章内容，<br><em>检验与巩固理解</em></h2>
+            <p class="intro-description">阅读完成后进入自测，查看答题讲解，并针对答错或跳过的内容进行复习。</p>
+            <div class="intro-learning-path"><span><b>01</b> 完成阅读</span><span><b>02</b> 检验理解</span><span><b>03</b> 回顾疑点</span></div>
+          </div>
+          <div class="intro-window intro-quiz-window">
+            <div class="intro-window-bar"><span>相关性与因果关系</span><span class="intro-example">自测示例</span></div>
+            <div class="intro-quiz-body">
+              <div class="intro-panel-label">阅读后的自测 <span>01 / 03</span></div><div class="intro-quiz-progress"><span></span></div>
+              <h3>冰淇淋销量与溺水事件同时增加，能否直接证明因果关系？</h3>
+              <div class="intro-quiz-option"><span>A</span> 能，两个现象总是同时变化</div>
+              <div class="intro-quiz-option intro-quiz-selected"><span>B</span> 不能，还需考虑气温等共同原因 <b aria-hidden="true">✓</b></div>
+              <details class="intro-quiz-details">
+                <summary>查看示例讲解与复习内容 <span aria-hidden="true">＋</span></summary>
+                <div class="intro-quiz-feedback"><b>关联不等于因果</b><p>气温可能同时影响冰淇淋销量和游泳人数。仅凭两个现象一起变化，还不能判断直接因果关系。</p><div class="intro-review-note"><span>复习内容</span><strong>共同原因与因果判断</strong><small>回顾原文第 2 段中的解释</small></div></div>
+              </details>
+            </div>
+          </div>
+        </div>
+        <div class="intro-scene-footer"><span>阅读、练习与复习，围绕同一篇文章展开</span><span>05 — 06</span></div>
+      </section>
+
+      <section class="intro-scene intro-scene-finish" id="intro-scene-6" data-intro-step="6" aria-labelledby="intro-title-6">
+        <div class="intro-finish-content">
+          <p class="intro-eyebrow"><span>06</span> 开始使用</p>
+          <img class="intro-finish-illustration" src="/reading-illustration.webp" width="270" height="216" alt="" loading="lazy" decoding="async">
+          <h2 id="intro-title-6">从一篇收藏，<br><em>开始系统精读</em></h2>
+          <p class="intro-description">逐段理解、分层追问、自测与复习。<br>保留阅读进度和提问记录，随时继续未完成的学习。</p>
+          <button class="intro-enter intro-enter-primary" type="button" data-intro-enter>进入知识蒸馏站 <span aria-hidden="true">→</span></button>
+          <p class="intro-finish-note">从收藏的一篇文章开始</p>
+        </div>
+        <div class="intro-finish-signature"><span class="intro-signature-line"></span><span>知识蒸馏站</span><span class="intro-signature-line"></span></div>
+      </section>
+    </main>
+  </div>
+  <div class="page" id="page" hidden>
     <!-- 侧边栏：logo / 一级导航 + 收藏夹二级导航 / 用户信息 -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="app-sidebar" aria-label="站点导航">
       <div class="sidebar-inner">
         <div class="brand-row">
           <span class="brand-mark" aria-hidden="true">
@@ -73,10 +234,16 @@
           </div>
         </nav>
 
+        <div class="sidebar-tools">
+        <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20.4 13.1A8.5 8.5 0 0 1 10.9 3.6a8.5 8.5 0 1 0 9.5 9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          <span>夜间模式</span><span class="theme-track" aria-hidden="true"></span>
+        </button>
         <button class="tutorial-replay" type="button" data-tutorial-start="station-basics">
           <span class="tutorial-help-icon" aria-hidden="true">?</span>
           <span>新手引导</span>
         </button>
+        </div>
         <div class="user-block" id="user-block">
           <span class="nav-avatar" id="user-avatar">·</span>
           <div class="user-meta">
@@ -97,6 +264,7 @@
             <p class="home-lede">搜一下，就是今天变好的开始。</p>
             <div class="home-actions">
               <button class="btn-primary" id="home-goto-collections" hidden>浏览我的收藏 →</button>
+              <button class="btn-ghost" type="button" data-intro-open>产品介绍</button>
             </div>
           </div>
           <img class="home-illustration" src="/reading-illustration.webp" width="220" height="180" alt="" decoding="async">
@@ -111,26 +279,38 @@
             </div>
             <div class="tstep">
               <b><span class="tstep-k">STEP 02</span> 保存完整文章</b>
-              <span class="hint">点卡片上的「保存全文」，在打开的知乎页面点一下书签栏的「🧪 保存这篇文章」。首次使用需要先把它装进书签栏。</span>
-              <div class="bookmarklet-wrap">
-                <a class="bookmarklet" id="home-bookmarklet" href="javascript:void(0)" draggable="true">🧪 保存这篇文章</a>
+              <span class="hint bookmark-desktop">点卡片上的「保存全文」，到打开的知乎页面点一下书签栏的「🧪 保存这篇文章」。首次使用需先把它装进书签栏 ↓</span>
+              <span class="hint bookmark-mobile">手机需要手动安装保存书签。请在同一个浏览器中打开知乎网页版、展开正文，再运行书签；已保存的文章可以直接开始学习。</span>
+              <div class="bookmarklet-wrap bookmark-desktop">                <a class="bookmarklet" id="home-bookmarklet" href="javascript:void(0)" draggable="true">🧪 保存这篇文章</a>
                 <span class="hint-inline">← 拖进书签栏</span>
               </div>
-              <div class="copy-row">
+              <div class="copy-row bookmark-desktop">
                 或者
                 <button class="btn-ghost btn-small" id="home-copy-bookmark">📋 复制书签</button>
                 <span class="hint" id="copy-bookmark-hint">复制后：右键浏览器书签栏 →「粘贴」，书签直接出现</span>
               </div>
+              <button class="btn-primary bookmark-mobile" type="button" id="mobile-install-bookmark">安装手机保存书签</button>
             </div>
             <div class="tstep">
               <b><span class="tstep-k">STEP 03</span> 开始逐段精读</b>
-              <span class="hint">全文送达后，卡片会亮起「✓ 已保存」，点击就能进入学习。读不懂的地方划选生成解释，也可以直接打字提问；读完之后可以自测，答错和跳过的地方都会讲清楚。</span>
-            </div>
+              <span class="hint">全文送达后会自动进入学习界面；也可以回到收藏页继续阅读。读不懂的地方可划选生成解释或直接提问，读完后还能自测并复习答错、跳过的内容。</span>            </div>
           </div>
-          <details class="manual">
-            <summary>粘贴不出来？点这里手动添加（复制书签代码）</summary>
-            <textarea class="bookmarklet-code" id="home-bookmarklet-code" readonly rows="3"></textarea>
+          <details class="manual" id="bookmark-install">
+            <summary><span class="bookmark-desktop">粘贴不出来？点这里手动添加（复制书签代码）</span><span class="bookmark-mobile">手机安装步骤与书签代码</span></summary>
+            <div class="bookmark-mobile bookmark-install-steps">
+              <ol>
+                <li>复制下方完整代码，再把当前网页添加为普通书签，名称设为「保存这篇文章」。</li>
+                <li>在浏览器的书签列表中编辑它，把原来的网址全部替换为代码，保留开头的 <code>javascript:</code>。</li>
+                <li>在同一浏览器打开知乎文章网页版，展开完整正文，再调用「保存这篇文章」书签。</li>
+              </ol>
+              <p><b>iPhone Safari：</b>在分享菜单中添加书签，进入书签列表后点「编辑」修改网址。</p>
+              <p><b>Chrome：</b>从浏览器菜单添加书签，在书签列表编辑。运行时可在地址栏输入「保存这篇文章」，点选书签建议。</p>
+              <p>不同手机浏览器对脚本书签的支持有差异。如果没有反应，可以先在电脑保存，再用手机登录同一账号继续读。</p>
+              <p class="bookmark-local-hint" id="bookmark-local-hint" hidden>当前使用的是本机预览地址。手机请打开可访问的正式站点后再安装，电脑上的 127.0.0.1 地址不能用于手机保存。</p>
+            </div>
+            <textarea class="bookmarklet-code" id="home-bookmarklet-code" aria-label="保存书签代码" readonly rows="3"></textarea>
             <button class="btn-ghost btn-small" id="home-copy-bookmarklet">复制书签代码</button>
+            <p class="hint" id="bookmark-copy-status" role="status"></p>
           </details>
         </div>
       </section>
@@ -155,6 +335,7 @@
               <option value="credibility">准确性（高→低）</option>
             </select>
             <button class="btn-ghost" id="refresh-btn">刷新</button>
+            <button class="btn-ghost" type="button" data-intro-open>产品介绍</button>
           </div>
         </div>
 
@@ -248,6 +429,13 @@
     </main>
   </div>
 
+  <button class="mobile-nav-toggle" type="button" aria-label="打开导航">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    <span>导航</span>
+  </button>
+  <button class="theme-toggle theme-floating" type="button" data-theme-toggle aria-pressed="false" aria-label="夜间模式">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20.4 13.1A8.5 8.5 0 0 1 10.9 3.6a8.5 8.5 0 1 0 9.5 9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+  </button>
   <button class="tutorial-mobile-replay" type="button" data-tutorial-start="station-basics" aria-label="打开新手引导">?</button>
 
   <!-- 蒸馏引导浮层：点击「去保存全文」后出现，全文送达后自动点亮 -->
@@ -268,7 +456,6 @@
     </div>
   </div>
 
-  <script src="/tutorial.js?v=1"></script>
-  <script src="/app.js?v=10"></script>
-</body>
+  <script src="/tutorial.js?v=2"></script>
+  <script src="/app.js?v=10"></script></body>
 </html>

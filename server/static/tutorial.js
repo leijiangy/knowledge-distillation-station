@@ -95,10 +95,11 @@
     if (!target) {
       ui.layer.classList.add("tour-no-target");
       spot.hidden = true;
-      card.style.left = "50%";
+      card.style.left = mobile ? "12px" : "50%";
+      card.style.right = mobile ? "12px" : "auto";
       card.style.top = mobile ? "auto" : "50%";
-      card.style.bottom = mobile ? "12px" : "auto";
-      card.style.transform = mobile ? "translateX(-50%)" : "translate(-50%, -50%)";
+      card.style.bottom = mobile ? "calc(12px + env(safe-area-inset-bottom, 0px))" : "auto";
+      card.style.transform = mobile ? "none" : "translate(-50%, -50%)";
       return;
     }
 
@@ -114,8 +115,14 @@
     if (mobile) {
       card.style.left = "12px";
       card.style.right = "12px";
-      card.style.bottom = "12px";
+      card.style.bottom = "calc(12px + env(safe-area-inset-bottom, 0px))";
       card.style.transform = "none";
+      const cardRect = card.getBoundingClientRect();
+      if (rect.top >= viewportHeight / 2 && rect.top < cardRect.bottom && rect.bottom > cardRect.top) {
+        // 底部导航要露出；短屏优先保留教程卡在屏内，内容由现有样式滚动。
+        const bottom = Math.min(viewportHeight - rect.top + 12, viewportHeight - cardRect.height - 12);
+        card.style.bottom = Math.max(viewportHeight - cardRect.bottom, bottom) + "px";
+      }
       return;
     }
 

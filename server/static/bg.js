@@ -1,5 +1,5 @@
-/* 知识蒸馏站 —— 动态科技背景（画布层，随鼠标变化）
-   绿色体系原样保留：点阵沿用原来的色值 rgba(47,122,61,.10) 与 24px 密度，只是从静态改为会动。
+/* 知识蒸馏站 —— 共用外观：主题偏好 + 动态科技背景
+   日间沿用绿色点阵；夜间切换为雾霾蓝，保留相同密度与动效层级。
    三层叠加：
      ① 透视点阵：光标附近的点提亮放大，整体随鼠标做轻微视差
      ② 连络网：节点缓慢漂移、近邻连线；光标把附近节点牵住并连线，呼应「蒸馏 / 网络」题材
@@ -8,14 +8,95 @@
 (() => {
   "use strict";
 
+  // 在 head 中立即设置主题，避免跨页或刷新时先闪过浅色页面。
+  const root = document.documentElement;
+  const key = "kd:theme";
+  const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+  function readPreference() {
+    try {
+      const value = localStorage.getItem(key);
+      return value === "dark" || value === "light" ? value : null;
+    } catch (_) { return null; }
+  }
+  let preference = readPreference();
+  function applyTheme() {
+    const dark = (preference || (systemTheme.matches ? "dark" : "light")) === "dark";
+    root.dataset.theme = dark ? "dark" : "light";
+    document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(dark));
+      button.title = dark ? "关闭夜间模式" : "开启夜间模式";
+    });
+  }
+  applyTheme();
+  document.addEventListener("DOMContentLoaded", applyTheme, { once: true });
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest("[data-theme-toggle]")) return;
+    preference = root.dataset.theme === "dark" ? "light" : "dark";
+    applyTheme();
+    try { localStorage.setItem(key, preference); } catch (_) { /* 禁用存储时，仍允许本页切换。 */ }
+  });
+  systemTheme.addEventListener("change", () => { if (!preference) applyTheme(); });
+  window.addEventListener("storage", (event) => {
+    if (event.key !== key && event.key !== null) return;
+    preference = readPreference();
+    applyTheme();
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) { preference = readPreference(); applyTheme(); }
+  });
+})();
+
+document.addEventListener("DOMContentLoaded", () => {
+  "use strict";
+
+  // 复用同一份导航：手机使用原生弹出层，宽屏仍保留原有侧栏布局。
+  const sidebar = document.getElementById("app-sidebar");
+  const page = document.getElementById("page");
+  const navToggle = document.querySelector(".mobile-nav-toggle");
+  const narrowNav = window.matchMedia("(max-width: 1100px)");
+  if (navToggle && page) {
+    navToggle.addEventListener("click", () => {
+      if (!narrowNav.matches) page.classList.remove("sidebar-collapsed");
+    });
+  }
+  if (sidebar && typeof sidebar.showPopover === "function") {
+    document.body.classList.add("mobile-nav-ready");
+    function syncNavigation() {
+      if (narrowNav.matches) {
+        sidebar.setAttribute("popover", "auto");
+        if (navToggle) navToggle.setAttribute("popovertarget", sidebar.id);
+      } else {
+        if (sidebar.matches(":popover-open")) sidebar.hidePopover();
+        sidebar.removeAttribute("popover");
+        if (navToggle) navToggle.removeAttribute("popovertarget");
+      }
+    }
+    syncNavigation();
+    narrowNav.addEventListener("change", syncNavigation);
+    sidebar.addEventListener("click", (event) => {
+      if (!narrowNav.matches || !(event.target instanceof Element)) return;
+      const closeButton = event.target.closest("#sidebar-toggle");
+      if (closeButton) {
+        // 提前拦截桌面的收起事件，手机关闭时不改动桌面偏好。
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      const destination = event.target.closest(
+        ".nav-item[href], .nav-subitem[href], #nav-home, #nav-recommend, .nav-subitem[data-token], [data-tutorial-start]"
+      );
+      if ((closeButton || destination) && sidebar.matches(":popover-open")) sidebar.hidePopover();
+    }, true);
+  }
+
   const canvas = document.getElementById("bg-canvas");
   if (!canvas || !canvas.getContext) return;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const GREEN = [47, 122, 61];    // 与 style.css 的 --green 同源，不引入新的绿色
-  const TEAL = [51, 122, 110];
-  const GOLD = [183, 134, 40];
+  let darkTheme = document.documentElement.dataset.theme === "dark";
+  let GREEN = darkTheme ? [134, 175, 192] : [47, 122, 61];
+  let TEAL = darkTheme ? [114, 166, 173] : [51, 122, 110];
+  let GOLD = darkTheme ? [219, 185, 105] : [183, 134, 40];
   const rgba = (c, a) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
 
   const GRID = 24;          // 点阵间距（px）——与原来 CSS 点阵的 24px 一致
@@ -95,7 +176,7 @@
   /* ---------- ③ 光标辉光（最底层：先把背景点亮） ---------- */
   function drawGlow() {
     const g = ctx.createRadialGradient(pointer.x, pointer.y, 0, pointer.x, pointer.y, CURSOR_GLOW);
-    g.addColorStop(0, "rgba(255, 255, 255, .40)");
+    g.addColorStop(0, darkTheme ? rgba(GREEN, .06) : "rgba(255, 255, 255, .40)");
     g.addColorStop(0.38, rgba(GREEN, 0.08));
     g.addColorStop(1, rgba(GREEN, 0));
     ctx.fillStyle = g;
@@ -109,7 +190,7 @@
     const s = ((now % 11000) / 11000) * span - band;   // 沿 (1,1) 方向的投影坐标
     const g = ctx.createLinearGradient(s / 2, s / 2, (s + band * 2) / 2, (s + band * 2) / 2);
     g.addColorStop(0, "rgba(255, 255, 255, 0)");
-    g.addColorStop(0.5, "rgba(255, 255, 255, .17)");
+    g.addColorStop(0.5, darkTheme ? rgba(GREEN, .025) : "rgba(255, 255, 255, .17)");
     g.addColorStop(1, "rgba(255, 255, 255, 0)");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
@@ -268,7 +349,15 @@
     });
   }
 
+  new MutationObserver(() => {
+    darkTheme = document.documentElement.dataset.theme === "dark";
+    GREEN = darkTheme ? [134, 175, 192] : [47, 122, 61];
+    TEAL = darkTheme ? [114, 166, 173] : [51, 122, 110];
+    GOLD = darkTheme ? [219, 185, 105] : [183, 134, 40];
+    if (!running) render(0);   // 减少动态效果时，也立即重绘当前配色。
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
   resize();
   if (reduceMotion.matches) render(0);   // 静态帧：保留构图，不做动画
   else start();
-})();
+}, { once: true });
