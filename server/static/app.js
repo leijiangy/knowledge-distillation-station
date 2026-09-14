@@ -750,30 +750,79 @@
     }
     if (status && status.callback_configured) location.href = "/api/oauth/start";
   });
-  // 学习记录：侧边栏下拉会话列表（点条目恢复阅读位置；底部可查看全部）
+  // 学习记录：侧边栏下拉会话列表（点条目恢复阅读位置）
   let histListLoaded = false;
+  let histItems = [];          // 最近一次加载的记录（删除后就地过滤，不重新请求）
+  function renderHistList() {
+    const sub = els.histSub;
+    if (!sub) return;
+    if (!histItems.length) {
+      sub.innerHTML = '<div class="nav-sub-loading">还没有学习记录</div>';
+      return;
+    }
+    sub.innerHTML = histItems.map((it) => {
+      const href = "/reading.html?url=" + encodeURIComponent(it.url) + "&seg=" + (it.seg || 0);
+      const label = it.total > 1 ? ((it.seg || 0) + 1) + "/" + it.total : "";
+      return '<div class="nav-subrow">'
+        + '<a class="nav-subitem" href="' + href + '" title="' + escapeHtml(it.title || "") + '">'
+        + '<span class="nav-subitem-title">' + escapeHtml(it.title || it.url) + '</span>'
+        + (label ? '<span class="sub-count">' + label + '</span>' : "")
+        + '</a>'
+        + '<button type="button" class="nav-subdel" data-del="' + escapeHtml(it.url || "") + '"'
+        + ' title="删除这条学习记录" aria-label="删除这条学习记录">×</button>'
+        + "</div>";
+    }).join("");
+  }
   async function loadHistoryList() {
     const sub = els.histSub;
     if (!sub) return;
     try {
       const data = await api("/api/reading/history");
-      const items = (data.items || []).slice(0, 8);
-      if (!items.length) {
-        sub.innerHTML = '<div class="nav-sub-loading">还没有学习记录</div>';
-        return;
-      }
-      histListLoaded = true;
-      sub.innerHTML = items.map((it) => {
-        const href = "/reading.html?url=" + encodeURIComponent(it.url) + "&seg=" + (it.seg || 0);
-        const label = it.total > 1 ? ((it.seg || 0) + 1) + "/" + it.total : "";
-        return '<a class="nav-subitem" href="' + href + '" title="' + escapeHtml(it.title || "") + '">'
-          + '<span class="nav-subitem-title">' + escapeHtml(it.title || it.url) + '</span>'
-          + (label ? '<span class="sub-count">' + label + '</span>' : "")
-          + "</a>";
-      }).join("");
+      histItems = (data.items || []).slice(0, 8);
+      if (histItems.length) histListLoaded = true;   // 空列表不记「已加载」，下次展开重新请求
+      renderHistList();
     } catch (err) {
       sub.innerHTML = '<div class="nav-sub-loading">加载失败</div>';
     }
+  }
+  // 删除一条学习记录：二次点击确认（原生 confirm 弹窗可能被宿主屏蔽）
+  let pendingHistDel = null;
+  async function deleteHistory(btn) {
+    const url = btn.getAttribute("data-del") || "";
+    if (!url) return;
+    if (pendingHistDel !== url) {
+      pendingHistDel = url;
+      btn.classList.add("confirm");
+      btn.textContent = "确认";
+      setTimeout(() => {
+        if (pendingHistDel === url) {
+          pendingHistDel = null;
+          btn.classList.remove("confirm");
+          btn.textContent = "×";
+        }
+      }, 4000);
+      return;
+    }
+    pendingHistDel = null;
+    btn.disabled = true;
+    try {
+      await api("/api/reading/history?url=" + encodeURIComponent(url), { method: "DELETE" });
+      histItems = histItems.filter((it) => it.url !== url);
+      renderHistList();
+    } catch (err) {
+      btn.disabled = false;
+      btn.classList.remove("confirm");
+      btn.textContent = "×";
+      alert("删除失败：" + err.message);
+    }
+  }
+  if (els.histSub) {
+    els.histSub.addEventListener("click", (e) => {
+      const del = e.target.closest(".nav-subdel");     // 删除按钮优先：不触发跳转
+      if (!del) return;
+      e.preventDefault();
+      deleteHistory(del);
+    });
   }
   if (els.histParent) {
     els.histParent.addEventListener("click", () => {

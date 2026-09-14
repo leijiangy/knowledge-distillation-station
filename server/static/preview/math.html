@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>公式渲染验证 · 知识蒸馏站</title>
+  <link rel="stylesheet" href="../vendor/katex/katex.min.css">
+  <style>
+    body { margin: 0; padding: 18px 20px 40px; background: #f6f5f1; color: #23261f;
+           font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    .hint { font-size: 12.5px; color: #6b6f66; margin: 0 0 14px; }
+    .cols { display: flex; gap: 18px; align-items: flex-start; }
+    .col { flex: 1 1 0; min-width: 0; }
+    .col > b { display: block; font-size: 12px; color: #6b6f66; margin-bottom: 6px; }
+    /* 与 reading.html 的 .rd-text / .mk-* / .kd-math 保持一致，保证所见即所得 */
+    #stage {
+      font-size: 15px; line-height: 2.05; white-space: pre-wrap;
+      border: 1px solid #dcd8cf; border-radius: 8px; background: rgba(255,255,255,.7);
+      padding: 10px 12px; max-height: 62vh; overflow: auto; user-select: text;
+    }
+    .mk { cursor: pointer; }
+    .mk-shared { border-bottom: 2px solid #2f7a3d; background: rgba(47,122,61,.06); }
+    .mk-private { border-bottom: 2px dashed #b78628; background: rgba(183,134,40,.05); }
+    .mk-draft { background: rgba(47,122,61,.22); }
+    /* 与 reading.html 的 .mk-* / .kd-math 规则保持一致 */
+    .kd-math-block .katex-display { margin: .45em 0; }
+    .mk-shared .kd-math:not(.kd-math-block) .katex { border-bottom: 2px solid #2f7a3d; }
+    .mk-private .kd-math:not(.kd-math-block) .katex { border-bottom: 2px dashed #b78628; }
+    .mk-shared:has(.kd-math-block) { border-bottom: 0; background: rgba(47,122,61,.09); }
+    .mk-private:has(.kd-math-block) { border-bottom: 0; background: rgba(183,134,40,.08); }
+    #report { font: 12.5px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap;
+              background: #22261f; color: #dfe6d8; border-radius: 8px; padding: 12px 14px;
+              max-height: 62vh; overflow: auto; margin: 0; }
+    .pass { color: #8fd694; } .fail { color: #ff9a8b; } .dim { color: #93a08c; }
+    #verdict { font-size: 15px; font-weight: 700; margin: 12px 0 0; }
+  </style>
+</head>
+<body>
+  <h1>公式渲染验证</h1>
+  <p class="hint">左：原文渲染效果（与精读左栏同一套 DOM 结构）。右：断言结果。fixture 第一段与用户截图一致。</p>
+  <div class="cols">
+    <div class="col">
+      <b>原文（本段）</b>
+      <div id="stage"></div>
+    </div>
+    <div class="col">
+      <b>断言</b>
+      <div id="report"></div>
+    </div>
+  </div>
+  <div id="verdict"></div>
+
+  <script src="../vendor/katex/katex.min.js"></script>
+  <script src="../math.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      // 第一段逐字取自用户截图（含跨行的 SDPA 公式）；其余是刻意构造的边界样例
+      const TEXT = [
+        "Q, K, V = XW_Q, XW_K, XW_V",
+        "",
+        "SDPA(Q,K,V) = \\text{softmax}(\\frac{QK^T}",
+        "{\\sqrt{d_k}})V",
+        "",
+        "Output = \\text{Concat}(head_1, ..., head_h) W_O",
+        "",
+        "2.2 加入门控机制",
+        "",
+        "作者尝试了在 Attention 的不同位置（Query, Key, Value, SDPA Output, Final Output）加入门控。最终发现在 SDPA 输出之后 (G_1) 加入门控效果最好。",
+        "",
+        "公式如下：",
+        "",
+        "Y' = Y \\odot \\sigma(X W_\\theta)",
+        "",
+        "行内公式 $E = mc^2$ 应当渲染；学习率 \\alpha 控制步长。",
+        "其中 Q, K, V = XW_Q 分别表示查询、键、值矩阵，维度 d_k 由 K^T 决定。",
+        "在英文段落里 the variable x_1 in code 不该把整句卷进来。",
+        "从 $5 到 $10 的价格区间不该被当成公式。",
+        "Open the file_name and press Enter. 也不该渲染（没有等式）。",
+        "路径 C:\\Users\\me 下的文件不该渲染。",
+        "",
+        "$$\\sum_{i=1}^{n} x_i$$",
+      ].join("\n");
+
+      const report = [];
+      let passed = 0;
+      let failed = 0;
+      const check = (ok, label, detail) => {
+        if (ok) passed++; else failed++;
+        report.push(`<span class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span> ${label}`
+          + (detail ? `\n     <span class="dim">${KDM.esc(detail)}</span>` : ""));
+      };
+
+      // ---- 1. 公式识别 ----
+      const spans = KDM.mathSpans(TEXT);
+      const texOf = (s) => s.tex.replace(/\s+/g, " ").slice(0, 46);
+      report.push(`<span class="dim">识别到 ${spans.length} 处公式：</span>`);
+      spans.forEach((s) => report.push(`  <span class="dim">[${s.start},${s.end}) ${s.display ? "块级" : "行内"} ${KDM.esc(texOf(s))}</span>`));
+
+      const find = (needle) => spans.find((s) => s.tex.includes(needle));
+      check(Boolean(find("XW_Q")), "整行裸公式（Q, K, V = XW_Q…）被识别");
+      const sdpa = find("SDPA");
+      check(Boolean(sdpa) && sdpa.tex.includes("\n"), "跨行的 SDPA 公式被合并成一条",
+        sdpa ? JSON.stringify(texOf(sdpa)) : "未识别");
+      check(Boolean(find("Concat")), "Output = \\text{Concat}(…) 被识别");
+      check(Boolean(find("odot")), "Y' = Y \\odot \\sigma(…) 被识别");
+      check(Boolean(spans.find((s) => s.tex.trim() === "E = mc^2")), "行内分隔符 $E = mc^2$ 被识别");
+      check(Boolean(spans.find((s) => s.tex.trim() === "\\alpha")), "散文里的 \\alpha 被识别为行内片段");
+      check(Boolean(spans.find((s) => s.tex.includes("sum_"))), "$$…$$ 块级公式被识别");
+      check(!spans.some((s) => s.tex.includes("5 到")), "$5 到 $10 不被误判为公式");
+      check(!spans.some((s) => s.tex.includes("file")), "英文散文词 file_name 不被误判（下标过长）");
+      check(!spans.some((s) => s.tex.includes("Users")), "含中文的 Windows 路径行不被误判");
+      check(!spans.some((s) => s.tex.includes("加入门控")), "中文散文段落不被误判");
+      // 不带反斜杠命令的裸公式：中文同行时也要编译
+      check(spans.some((s) => s.tex.trim() === "(G_1)"), "散文里的 (G_1) 被编译（连括号一起）");
+      const eq = spans.find((s) => s.tex.includes("XW_Q") && !s.display);   // 行内那条，不是整行那条
+      check(Boolean(eq) && eq.tex.trim() === "Q, K, V = XW_Q", "中文同行的裸公式连等式前半段一起编译",
+        eq ? JSON.stringify(eq.tex) : "未识别");
+      check(Boolean(spans.find((s) => s.tex.trim() === "d_k")), "中文句子里的 d_k 被编译");
+      check(Boolean(spans.find((s) => s.tex.trim() === "K^T")), "中文句子里的 K^T 被编译");
+      const en = spans.find((s) => s.tex.includes("x_1"));
+      check(Boolean(en) && en.tex.trim() === "x_1", "英文散文里只圈到 x_1，不吞 variable",
+        en ? JSON.stringify(en.tex) : "未识别");
+      check(!spans.some((s) => /variable/.test(s.tex)), "英文散文词不被卷进公式");
+      // 裸公式（无分隔符）的 tex 必须等于原文切片——位置锚定的前提
+      const isDelim = (s) => /^\$|^\\\[|^\\\(/.test(TEXT.slice(s.start, s.end));
+      const bare = spans.filter((s) => !isDelim(s));
+      check(bare.every((s) => TEXT.slice(s.start, s.end) === s.tex),
+        "每条裸公式的原文切片 === tex（位置锚定可靠）",
+        bare.filter((s) => TEXT.slice(s.start, s.end) !== s.tex).map(texOf).join(" | "));
+
+      // ---- 2. 渲染：DOM 原子序列必须与原文分段一一对应 ----
+      const stage = document.getElementById("stage");
+      // 标记：整条公式 / 含公式的整句 / 纯散文
+      const marks = [
+        { id: 11, kind: "explain", start: sdpa.start, end: sdpa.end },
+        { id: 12, kind: "ask", start: TEXT.indexOf("作者尝试了"), end: TEXT.indexOf("效果最好。") + 5 },
+        { id: 13, kind: "draft", start: TEXT.indexOf("公式如下"), end: TEXT.indexOf("公式如下") + 4 },
+        { id: 14, kind: "explain", start: TEXT.indexOf("行内公式"), end: TEXT.indexOf("应当渲染") },
+      ];
+      stage.innerHTML = KDM.buildHtml({
+        text: TEXT, marks,
+        markWrapper: (m, inner) => `<span class="mk mk-${m.kind === "explain" ? "shared" : m.kind === "ask" ? "private" : "draft"}"`
+          + (m.id ? ` data-node="${m.id}"` : "") + `>${inner}</span>`,
+      });
+
+      // 期望原子序列：散文按字符切段，公式整段一个原子
+      const atoms = [];
+      let cursor = 0;
+      for (const s of spans) {
+        atoms.push({ type: "text", len: s.start - cursor });
+        atoms.push({ type: "math", len: s.end - s.start, src: s.start });
+        cursor = s.end;
+      }
+      atoms.push({ type: "text", len: TEXT.length - cursor });
+      const expected = atoms.filter((a) => a.len > 0);
+
+      const actual = [];
+      (function walk(el) {
+        for (const n of el.childNodes) {
+          if (n.nodeType === 3) {
+            if (n.data.length) actual.push({ type: "text", len: n.data.length });
+          } else if (n.nodeType === 1) {
+            if (n.classList.contains("kd-math")) {
+              actual.push({ type: "math", len: Number(n.dataset.srcLen), src: Number(n.dataset.srcStart) });
+            } else {
+              walk(n);       // .mk 包装层不是原子，往下走
+            }
+          }
+        }
+      })(stage);
+
+      const shape = (list) => list.map((a) => `${a.type[0]}${a.len}`).join(",");
+      // 标记（.mk）会把一段散文切成多个文本节点，比较前先把相邻文本原子合并
+      const merge = (list) => {
+        const out = [];
+        for (const a of list) {
+          const last = out[out.length - 1];
+          if (a.type === "text" && last && last.type === "text") last.len += a.len;
+          else out.push({ type: a.type, len: a.len, src: a.src });
+        }
+        return out;
+      };
+      const expFlat = merge(expected);
+      const actFlat = merge(actual);
+      check(expFlat.length === actFlat.length && expFlat.every((a, i) => a.type === actFlat[i].type && a.len === actFlat[i].len),
+        "DOM 原子序列 === 原文分段序列（公式整体一个原子，长度=原文长度）",
+        `期望 ${shape(expFlat)}\n     实际 ${shape(actFlat)}`);
+      check(actual.filter((a) => a.type === "math").every((a) => TEXT.slice(a.src, a.src + a.len).length === a.len),
+        "每个公式原子的 data-src-start/len 落在原文合法区间");
+      check(stage.querySelectorAll(".kd-math").length === spans.length,
+        "渲染出的公式元素数 === 识别数", `${stage.querySelectorAll(".kd-math").length} vs ${spans.length}`);
+      check(stage.querySelector(".mk-shared .kd-math") !== null, "整条公式被共享标记包住（下划线可见）");
+
+      // ---- 3. 偏移映射：散文逐字符精确，公式吸附到两端 ----
+      // 枚举所有可放置光标的位置（文本节点内每个字符 + 公式元素前后）
+      const positions = [];
+      (function walk(el) {
+        for (const n of el.childNodes) {
+          if (n.nodeType === 3) {
+            for (let i = 0; i <= n.data.length; i++) positions.push({ node: n, off: i });
+          } else if (n.nodeType === 1) {
+            if (n.classList.contains("kd-math")) positions.push({ node: n, off: 0 }, { node: n, off: 1 });
+            else walk(n);
+          }
+        }
+      })(stage);
+
+      const mapped = positions.map((p) => KDM.sourceOffset(stage, p.node, p.off));
+      check(mapped[0] === 0 && mapped[mapped.length - 1] === TEXT.length,
+        "首尾位置映射到 [0, 原文长度]", `${mapped[0]} … ${mapped[mapped.length - 1]} vs ${TEXT.length}`);
+      check(mapped.every((v, i) => i === 0 || v >= mapped[i - 1]), "偏移映射单调不减");
+      check(mapped.every((v) => v >= 0 && v <= TEXT.length), "偏移映射始终落在原文范围内");
+
+      // 散文位置的精确性：每个文本节点内的第 k 个位置，必须映射到「该文本节点起点 + k」
+      const textNodes = [];
+      (function walk(el) {
+        for (const n of el.childNodes) {
+          if (n.nodeType === 3) textNodes.push(n);
+          else if (n.nodeType === 1 && !n.classList.contains("kd-math")) walk(n);
+        }
+      })(stage);
+      let srcAcc = 0;
+      let within = 0;      // 当前文本原子内已走过的长度（标记会把一个原子切成多个文本节点）
+      let ei = 0;
+      let exact = true;
+      let firstBad = "";
+      for (const node of textNodes) {
+        // 走到当前文本节点所属的文本原子（跳过公式原子，它们整体占据自己的原文区间）
+        while (expected[ei] && expected[ei].type === "math") { srcAcc += expected[ei].len; ei++; }
+        const atom = expected[ei];
+        if (!atom) { exact = false; firstBad = firstBad || "文本节点多于期望"; break; }
+        for (let k = 0; k <= node.data.length; k++) {
+          if (KDM.sourceOffset(stage, node, k) !== srcAcc + within + k) {
+            exact = false;
+            firstBad = firstBad || `文本位置 ${srcAcc + within + k} 映射错误`;
+            break;
+          }
+        }
+        if (!exact) break;
+        within += node.data.length;
+        if (within === atom.len) { ei++; srcAcc += atom.len; within = 0; }
+      }
+      check(exact, "散文区域逐字符偏移精确", firstBad);
+
+      // 公式内部吸附：左半 → 公式起点，右半 → 公式终点（需要真实布局）
+      const mathEl = stage.querySelector(".kd-math");
+      const rect = mathEl.getBoundingClientRect();
+      const inner = mathEl.querySelector(".katex-html span") || mathEl;
+      const firstText = (function findText(el) {
+        for (const n of el.childNodes) {
+          if (n.nodeType === 3 && n.data.trim()) return n;
+          if (n.nodeType === 1) { const r = findText(n); if (r) return r; }
+        }
+        return null;
+      })(mathEl);
+      const leftOffset = KDM.sourceOffset(stage, firstText, 0, rect.left + 1);
+      const rightOffset = KDM.sourceOffset(stage, firstText, 0, rect.right - 1);
+      check(leftOffset === Number(mathEl.dataset.srcStart), "公式内偏左 → 吸附到公式起点", `${leftOffset} vs ${mathEl.dataset.srcStart}`);
+      check(rightOffset === Number(mathEl.dataset.srcEnd), "公式内偏右 → 吸附到公式终点", `${rightOffset} vs ${mathEl.dataset.srcEnd}`);
+
+      // ---- 4. KaTeX 解析失败的兜底：宁可不渲染，也不出红色报错 ----
+      const badText = "这道题 \\thisIsNotACommand 需要看原文。";
+      const badHtml = KDM.buildHtml({ text: badText });
+      check(!badHtml.includes("katex-error") && badHtml.includes("thisIsNotACommand"),
+        "KaTeX 解析不了时退回原文（不显示报错）");
+      check(!KDM.buildHtml({ text: "纯中文段落，没有任何公式。" }).includes("kd-math"),
+        "无公式文本不产生任何公式 DOM");
+
+      document.getElementById("report").innerHTML = report.join("\n");
+      const verdict = document.getElementById("verdict");
+      verdict.textContent = failed === 0
+        ? `全部通过：${passed}/${passed + failed}`
+        : `失败 ${failed} 项（通过 ${passed}）`;
+      verdict.style.color = failed === 0 ? "#2f7a3d" : "#a33";
+      document.title = failed === 0 ? `PASS ${passed}/${passed + failed}` : `FAIL ${failed}`;
+    })();
+  </script>
+</body>
+</html>

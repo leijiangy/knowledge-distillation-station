@@ -12,6 +12,9 @@
 
 | 位置 | 内容 |
 |---|---|
+| `server/static/vendor/katex/` | **本地化的 KaTeX 0.18.7**（公式编译；仅 woff2 字体，约 600KB，MIT。升级方式：从 npm 取 dist，删掉 css 里 woff/ttf 两个 src） |
+| `server/static/math.js` | 公式识别（含无分隔符的裸 LaTeX）+ KaTeX 渲染 + 「渲染后 DOM ↔ 原文偏移」映射（划选/标记锚定依赖它） |
+| `server/static/preview/math.html` | 公式渲染验证页：30 项断言（识别、DOM 原子序列、逐字符偏移、吸附）+ 可视化对照。用相对路径引资源，可直接双击打开 |
 | `skills/zhihu/references/` | **官方知乎 skill 文档**（0.7.2-beta）：hackathon.md（赛程/提交要求）、user-api.md（用户数据 API 契约）、hackathon-oauth.md（OAuth 接入）、http-api.md（搜索/热榜/直答）、hackathon-content-api.md、creator.md、oauth.md 等 |
 | `skills/zhihu-v2026s2/` | 官方黑客松 skill 包（v2026s2，来源：https://zhstatic.zhihu.com/skill/zhihu-hackathon-skill_v2026s2.zip ）：初始化编排、OAuth 引导文案、Hello World 模板 + Windows 适配脚本（win_init.mjs / win_finalize.mjs） |
 | `skills/distiller-project/` | 本项目 skill：产品定位、架构、三指标口径、api-contracts.md |

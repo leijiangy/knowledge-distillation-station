@@ -119,6 +119,19 @@ body {
 .sub-count { font-size: 11px; color: var(--ink-3); font-weight: 400; flex: 0 0 auto; }
 .nav-subitem.active .sub-count { color: var(--green); }
 
+/* 学习记录条目：删除按钮（平时压低存在感，悬停才亮；二次点击确认后变红） */
+.nav-subrow { display: flex; align-items: center; gap: 2px; }
+.nav-subrow .nav-subitem { flex: 1 1 auto; min-width: 0; width: auto; }
+.nav-subdel {
+  flex: 0 0 auto; border: 0; background: none; cursor: pointer;
+  color: var(--ink-3); font-family: inherit; font-size: 14px; line-height: 1;
+  padding: 4px 6px; border-radius: 5px; opacity: .35;
+  transition: opacity .15s ease, background .15s ease;
+}
+.nav-subrow:hover .nav-subdel, .nav-subdel:focus-visible { opacity: 1; }
+.nav-subdel:hover { background: rgba(163, 51, 51, .10); color: #a33; }
+.nav-subdel.confirm { opacity: 1; background: rgba(163, 51, 51, .14); color: #a33; font-size: 11px; }
+
 /* 用户信息块 */
 .user-block {
   margin-top: auto; display: flex; align-items: center; gap: 9px;

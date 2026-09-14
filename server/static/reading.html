@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>精读 · 知识蒸馏站</title>
+  <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <link rel="stylesheet" href="/style.css">
   <script src="/bg.js" defer></script>
   <style>
@@ -135,6 +136,16 @@
     .mk-private { border-bottom: 2px dashed var(--gold); background: rgba(183,134,40,.05); }
     .mk-active { background: rgba(47,122,61,.16); }
     .mk-draft { background: rgba(47, 122, 61, .22); }
+
+    /* 公式（KaTeX 渲染）：独立成行的公式由 KaTeX 的 .katex-display 居中 */
+    .kd-math-block .katex-display { margin: .45em 0; }
+    /* 行内公式被标记：下划线贴着公式（行内 .katex 是行内元素） */
+    .mk-shared .kd-math:not(.kd-math-block) .katex { border-bottom: 2px solid var(--green); }
+    .mk-private .kd-math:not(.kd-math-block) .katex { border-bottom: 2px dashed var(--gold); }
+    /* 独立成行的公式被标记：display 模式下 .katex 是块级，下划线会横贯整行，
+       所以改成整行浅底纹——读起来是「这一块被标了」而不是一条分隔线 */
+    .mk-shared:has(.kd-math-block) { border-bottom: 0; background: rgba(47,122,61,.09); }
+    .mk-private:has(.kd-math-block) { border-bottom: 0; background: rgba(183,134,40,.08); }
 
     /* 右栏：这一层的内容（解释或回答）+ 提问栏 */
     .rd-pane { min-width: 0; }
@@ -312,6 +323,9 @@
     </main>
   </div>
 
+  <!-- 公式渲染：KaTeX 本地化（server/static/vendor/katex）+ 识别与偏移映射（math.js） -->
+  <script src="/vendor/katex/katex.min.js"></script>
+  <script src="/math.js"></script>
   <script>
     (() => {
       "use strict";
@@ -342,17 +356,18 @@
       }
 
       // ---------- 选区：容器内字符偏移（原生选择优先，自绘草稿兜底） ----------
+      // 偏移一律是「原文串下标」；公式已渲染成 HTML，长度换算交给 KDM.sourceOffset
       function selectionOffsets(container) {
         const sel = window.getSelection();
         if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
           const range = sel.getRangeAt(0);
           if (container.contains(range.startContainer) && container.contains(range.endContainer)) {
-            const pre = document.createRange();
-            pre.selectNodeContents(container);
-            pre.setEnd(range.startContainer, range.startOffset);
-            const start = pre.toString().length;
-            const length = range.toString().length;
-            if (length > 0) return { start, end: start + length };
+            const rects = range.getClientRects();
+            const startX = rects.length ? rects[0].left : null;
+            const endX = rects.length ? rects[rects.length - 1].right : null;
+            const start = KDM.sourceOffset(container, range.startContainer, range.startOffset, startX);
+            const end = KDM.sourceOffset(container, range.endContainer, range.endOffset, endX);
+            if (start != null && end != null && end > start) return { start, end };
           }
         }
         // 兜底：自绘草稿选区（宿主屏蔽原生文本选择时，如 ZCode 内置浏览器面板）
@@ -374,11 +389,9 @@
           const pos = document.caretPositionFromPoint(x, y);
           if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset); range.collapse(true); }
         }
-        if (!range || !container.contains(range.startContainer)) return null;
-        const pre = document.createRange();
-        pre.selectNodeContents(container);
-        pre.setEnd(range.startContainer, range.startOffset);
-        return pre.toString().length;
+        if (!range) return null;
+        // 公式是原子的：光标落在公式内，按左右半段吸附到公式的起点或终点
+        return KDM.sourceOffset(container, range.startContainer, range.startOffset, x);
       }
 
       // 把区间裁剪为「包含锚点、且未被已有标记覆盖」的最大连续区间（避开标记，避免重叠被拒）
@@ -472,25 +485,18 @@
       }
 
       // ---------- 标记渲染 ----------
+      // 文本 → HTML：公式交给 KDM（识别 + KaTeX 渲染），标记按原文下标包在片段外层
       function renderText(container, text, marks) {
-        const list = [...(marks || [])].sort((a, b) => a.start - b.start);
-        let html = "";
-        let pos = 0;
-        for (const m of list) {
-          if (m.start < pos) continue;              // 防御：忽略异常重叠
-          if (m.start > pos) html += esc(text.slice(pos, m.start));
-          const cls = m.kind === "explain" ? "mk-shared"
-            : (m.kind === "draft" ? "mk-draft" : "mk-private");
-          if (m.kind === "draft") {
-            html += `<span class="mk ${cls}">` + esc(text.slice(m.start, m.end)) + "</span>";
-          } else {
-            html += `<span class="mk ${cls}" data-node="${m.id}" data-ask="${m.kind === "ask" ? 1 : 0}">`
-              + esc(text.slice(m.start, m.end)) + "</span>";
-          }
-          pos = m.end;
-        }
-        html += esc(text.slice(pos));
-        container.innerHTML = html;
+        container.innerHTML = KDM.buildHtml({
+          text, marks,
+          markWrapper: (m, inner) => {
+            const cls = m.kind === "explain" ? "mk-shared"
+              : (m.kind === "draft" ? "mk-draft" : "mk-private");
+            if (m.kind === "draft") return `<span class="mk ${cls}">` + inner + "</span>";
+            return `<span class="mk ${cls}" data-node="${esc(m.id)}" data-ask="${m.kind === "ask" ? 1 : 0}">`
+              + inner + "</span>";
+          },
+        });
         container.querySelectorAll(".mk").forEach((el) => {
           el.addEventListener("click", () => {
             const id = Number(el.getAttribute("data-node"));
@@ -512,8 +518,8 @@
         const side = $("rd-side");
         if (!side) return;
         state.answerNodeId = nodeId || null;
-        $("rd-answer-q").textContent = question || "";
-        $("rd-answer-body").textContent = answer || "";
+        KDM.renderMathInto($("rd-answer-q"), question || "");
+        KDM.renderMathInto($("rd-answer-body"), answer || "");
         const label = $("rd-right-label");
         if (label) label.textContent = "回答";
         side.classList.remove("covered");
@@ -772,7 +778,7 @@
           if (gen !== articleGen) return;   // 期间又切换了文章：丢弃本次结果
           state.url = url;
           state.article = data.article;
-          $("rd-title").textContent = data.article.title || "精读";
+          KDM.renderMathInto($("rd-title"), data.article.title || "精读");
           $("rd-title-link").href = url;   // 点标题回知乎原文
           loadAuthor(url, data.article.title || "", data.article.author);
           $("rd-start").hidden = true; $("rd-session").hidden = false;
@@ -1024,11 +1030,44 @@
           const href = "/reading.html?url=" + encodeURIComponent(it.url) + "&seg=" + (it.seg || 0);
           const label = it.total > 1 ? ((it.seg || 0) + 1) + "/" + it.total : "";
           const active = histNormKey(it.url) === curKey ? " active" : "";   // 当前打开的文章高亮
-          return '<a class="nav-subitem' + active + '" href="' + href + '" title="' + esc(it.title || "") + '">'
-            + '<span class="nav-subitem-title">' + esc(it.title || it.url) + '</span>'
+          return '<div class="nav-subrow">'
+            + '<a class="nav-subitem' + active + '" href="' + href + '" title="' + esc(it.title || "") + '">'
+            + '<span class="nav-subitem-title">' + KDM.buildHtml({ text: it.title || it.url || "" }) + '</span>'
             + (label ? '<span class="sub-count">' + label + '</span>' : "")
-            + "</a>";
+            + '</a>'
+            + '<button type="button" class="nav-subdel" data-del="' + esc(it.url || "") + '"'
+            + ' title="删除这条学习记录" aria-label="删除这条学习记录">×</button>'
+            + "</div>";
         }).join("");
+      }
+
+      // 删除一条学习记录：二次点击确认（原生 confirm 弹窗可能被宿主屏蔽）
+      let pendingHistDel = null;
+      function resetHistDel(btn) {
+        btn.disabled = false;
+        btn.classList.remove("confirm");
+        btn.textContent = "×";
+      }
+      async function deleteHistory(btn) {
+        const url = btn.getAttribute("data-del") || "";
+        if (!url) return;
+        if (pendingHistDel !== url) {
+          pendingHistDel = url;
+          btn.classList.add("confirm");
+          btn.textContent = "确认";
+          setTimeout(() => { if (pendingHistDel === url) { pendingHistDel = null; resetHistDel(btn); } }, 4000);
+          return;
+        }
+        pendingHistDel = null;
+        btn.disabled = true;
+        try {
+          await api("/api/reading/history?url=" + encodeURIComponent(url), { method: "DELETE" });
+          histCache = (histCache || []).filter((it) => it.url !== url);
+          renderHistList(histCache);
+        } catch (err) {
+          resetHistDel(btn);
+          alert("删除失败：" + err.message);
+        }
       }
       async function loadHistoryList(force) {
         const sub = $("hist-sub");
@@ -1066,6 +1105,8 @@
         const histSub = $("hist-sub");
         if (histSub) {
           histSub.addEventListener("click", (e) => {
+            const del = e.target.closest(".nav-subdel");     // 删除按钮优先：不触发跳转
+            if (del) { e.preventDefault(); deleteHistory(del); return; }
             const a = e.target.closest("a.nav-subitem");
             if (!a) return;
             e.preventDefault();

@@ -612,6 +612,24 @@ async def reading_history(request: Request):
     return {"ok": True, "items": items}
 
 
+@app.delete("/api/reading/history")
+async def reading_history_delete(request: Request, url: str):
+    """删除一条学习记录（软删除：追加 dismissed 埋点，读取时据此隐藏）"""
+    session = _current_session(request)
+    _token, login_error = _resolve_token(session)
+    if login_error:
+        return {"ok": False, "error": login_error}
+    key = _norm_key(url)
+    if not key:
+        return {"ok": False, "error": {"code": "BAD_REQUEST", "message": "缺少文章地址。"}}
+    try:
+        await reading_store.dismiss_history(key, _user_key_id(session))
+    except Exception as exc:
+        print(f"[reading] 删除学习记录失败：{exc}")
+        return {"ok": False, "error": {"code": "DB_FAILED", "message": "删除失败，请稍后再试。"}}
+    return {"ok": True}
+
+
 @app.post("/api/reading/selection")
 async def reading_selection(request: Request):
     """提交选区（纯选中）：生成共享解释，段内区间不重叠"""

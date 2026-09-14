@@ -187,7 +187,9 @@ async def segment_article(title: str, content: str, max_chars: int = 600) -> dic
     return {"summary": str(data.get("summary") or "").strip(), "cuts": cuts}
 
 
-_EXPLAIN_SYSTEM = "你是一位耐心、克制的中文精读教练。你的解释要准确、平实、不夸张。"
+_EXPLAIN_SYSTEM = ("你是一位耐心、克制的中文精读教练。你的解释要准确、平实、不夸张。"
+                   "涉及数学公式时，行内公式用 $…$ 包裹、独立成行的公式用 $$…$$ 包裹；"
+                   "不要输出裸露的 LaTeX 命令（前端按这两个分隔符渲染公式）。")
 
 
 async def explain_segment(title: str, summary: str, segment_text: str,
