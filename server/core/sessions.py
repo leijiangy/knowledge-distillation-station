@@ -17,6 +17,9 @@ class Session:
     profile: dict | None = None         # 用户公开信息（昵称/头像等）
     state_verified: bool | None = None  # 回调是否带回了 state
     error: dict | None = None           # 最近一次错误 {"code", "message"}
+    # 登录完成后要落到哪（相对本站的路径）：保存后跳回精读页靠它穿过授权流程。
+    # 不放进 state 参数，而是挂在会话上——会话 cookie 在发起授权前就已经下发，回程能拿到。
+    next_path: str | None = None
 
 
 class SessionStore:

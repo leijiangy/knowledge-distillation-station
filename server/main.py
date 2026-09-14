@@ -106,13 +106,17 @@ async def oauth_status(request: Request, response: Response):
 
 
 @app.get("/api/oauth/start")
-async def oauth_start(request: Request, response: Response):
+async def oauth_start(request: Request, response: Response, next: str = ""):
     session = _get_or_create(request, response)
+    # 登录完要落到哪：保存后跳回精读靠它穿过授权流程（默认回到首页）
+    session.next_path = oauth.local_path(next) or None
     try:
         session.state = oauth.new_state()
         session.error = None
         url = oauth.build_authorize_url(session.state)
-        return RedirectResponse(url, status_code=302)
+        redirect = RedirectResponse(url, status_code=302)
+        _attach_cookie(redirect, session)   # 新建的会话也要把 cookie 带出去
+        return redirect
     except oauth.ZhihuError as exc:
         session.error = {"code": str(exc.code), "message": exc.message}
         redirect = RedirectResponse("/?oauth=error", status_code=302)
@@ -146,7 +150,8 @@ async def auth_callback(request: Request):
             session.profile = await oauth.fetch_profile(session.token)
         except oauth.ZhihuError:
             session.profile = None  # 资料获取失败不阻断登录
-        redirect = RedirectResponse("/?oauth=success", status_code=302)
+        redirect = RedirectResponse(session.next_path or "/?oauth=success", status_code=302)
+        session.next_path = None
         _attach_cookie(redirect, session)
         return redirect
     except oauth.ZhihuError as exc:

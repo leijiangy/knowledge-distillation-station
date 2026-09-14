@@ -626,18 +626,24 @@
 
     const params = new URLSearchParams(location.search);
     const canRead = status.authorized || status.self_mode;
+    const savedUrl = params.get("saved");
     if (params.get("oauth") === "error") {
       showHome();
       return;
     }
     if (!canRead) {
       // 默认授权：能走 OAuth 就直接发起（用户进入即授权，无需点按钮）；本地预览模式停在首页
-      if (status.callback_configured) { location.href = "/api/oauth/start"; return; }
+      if (status.callback_configured) {
+        // 保存后跳回（?saved=）要把目标一起带上：否则会被这次授权跳转吃掉，
+        // 登录完只落回首页，用户看到的就是"保存了却没跳转"
+        const next = savedUrl ? "/reading.html?url=" + encodeURIComponent(savedUrl) : "";
+        location.href = "/api/oauth/start" + (next ? "?next=" + encodeURIComponent(next) : "");
+        return;
+      }
       showHome();
       return;
     }
     // 保存完成跳回（?saved=文章地址）：直接进入该篇的学习
-    const savedUrl = params.get("saved");
     if (savedUrl) {
       location.href = "/reading.html?url=" + encodeURIComponent(savedUrl);
       return;
