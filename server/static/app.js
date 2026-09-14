@@ -17,6 +17,7 @@
     viewHome: $("view-home"), viewCollections: $("view-collections"),
     homeGotoCollections: $("home-goto-collections"),
     favFilter: $("fav-filter"), emptyGotoSearch: $("empty-goto-search"),
+    homeSearchInput: $("home-search-input"), homeSearchBtn: $("home-search-btn"),
     navSearch: $("nav-search"), viewSearch: $("view-search"),
     searchExpand: $("search-expand"), searchInput: $("search-input"), searchBtn: $("search-btn"),
     searchCards: $("search-cards"),
@@ -1050,6 +1051,25 @@
     els.emptyGotoSearch.addEventListener("click", () => {
       showView("search");
       if (els.searchInput) els.searchInput.focus();
+    });
+  }
+  // 首页搜索框：把关键词带进搜索视图直接搜（首页只负责「开始」，结果都在搜索视图）
+  function searchFromHome() {
+    const q = (els.homeSearchInput ? els.homeSearchInput.value : "").trim();
+    if (!q) {
+      if (els.homeSearchInput) els.homeSearchInput.focus();
+      return;
+    }
+    showView("search");
+    if (els.searchInput) els.searchInput.value = q;
+    loadSearch(q, false);
+  }
+  if (els.homeSearchBtn) {
+    els.homeSearchBtn.addEventListener("click", searchFromHome);
+  }
+  if (els.homeSearchInput) {
+    els.homeSearchInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") searchFromHome();
     });
   }
   if (els.favFilter) {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>知识蒸馏站 · 把收藏夹变成学习进度表</title>
-  <link rel="stylesheet" href="/style.css?v=6">
+  <link rel="stylesheet" href="/style.css?v=7">
   <script src="/bg.js?v=2" defer></script>
 </head>
 <body>
@@ -94,9 +94,13 @@
         <div class="home-hero">
           <div class="home-intro">
             <h1>今天学点什么？</h1>
-            <p class="home-lede">有一天你会发现，那些曾让你卡住的段落，你已经能自己讲给别人听了。</p>
+            <p class="home-lede">搜一下，就是今天变好的开始。</p>
+            <div class="home-search">
+              <input class="search-input home-search-input" id="home-search-input" type="search" maxlength="60" placeholder="今天想搞懂什么？" aria-label="搜索想学的内容">
+              <button class="btn-primary" id="home-search-btn">搜一下</button>
+            </div>
             <div class="home-actions">
-              <button class="btn-primary" id="home-goto-collections" hidden>浏览我的收藏 →</button>
+              <button class="btn-ghost" id="home-goto-collections" hidden>浏览我的收藏 →</button>
             </div>
           </div>
           <img class="home-illustration" src="/reading-illustration.webp" width="220" height="180" alt="" decoding="async">
@@ -269,6 +273,6 @@
   </div>
 
   <script src="/tutorial.js?v=1"></script>
-  <script src="/app.js?v=6"></script>
+  <script src="/app.js?v=7"></script>
 </body>
 </html>
