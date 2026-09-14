@@ -255,7 +255,7 @@
       : `<a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>`;
     const badgeHtml = dist
       ? `<button class="distill-badge" data-learn="${escapeHtml(item.Url || "")}">✓ 已保存 · 全文 ${dist.length} 字 · 开始学习 →</button>`
-      : `<button class="go-distill" data-godistill="${escapeHtml(dKey)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}">🧪 去保存全文</button>`;
+      : `<button class="go-distill" data-godistill="${escapeHtml(dKey)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5C8.5 3.5 5 3.5 3 4.5v14c2-1 5.5-1 9 1 3.5-2 7-2 9-1v-14c-2-1-5.5-1-9 1Z"/><path d="M12 5.5v14M6 8h3M15 8h3"/></svg> 保存全文</button>`;
     const labels = ["approval", "richness", "credibility"].map((kind) => {
       const metric = m[kind] || {};
       const basis = (metric.basis || []).join(" · ");
@@ -662,7 +662,7 @@
       : "";
     const actionHtml = dist
       ? `<button class="distill-badge" data-learn="${escapeHtml(item.Url || "")}">✓ 已保存 · 全文 ${dist.length} 字 · 开始学习 →</button>`
-      : `<button class="go-distill" data-godistill="${escapeHtml(key)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}">🧪 去保存全文</button>`;
+      : `<button class="go-distill" data-godistill="${escapeHtml(key)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5C8.5 3.5 5 3.5 3 4.5v14c2-1 5.5-1 9 1 3.5-2 7-2 9-1v-14c-2-1-5.5-1-9 1Z"/><path d="M12 5.5v14M6 8h3M15 8h3"/></svg> 保存全文</button>`;
     const titleHtml = dist
       ? `<a class="card-title" href="/reading.html?url=${encodeURIComponent(item.Url || "")}">${escapeHtml(item.Title || "（无标题）")}</a>`
       : `<a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>`;
