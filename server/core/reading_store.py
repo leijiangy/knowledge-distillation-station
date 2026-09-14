@@ -145,3 +145,23 @@ async def append_event(article_key: str, uid: str, event: str,
               "seg_index": seg_index, "node_id": node_id, "at": int(time.time())},
     )
     resp.raise_for_status()
+
+
+async def list_recent_opened(uid: str, limit: int = 100) -> list:
+    """学习记录：每篇文章最后读到哪一段（取 open 埋点里各文章的最新一条）"""
+    _check_config()
+    resp = await _get_client().get(
+        f"{_REST}/reading_events",
+        params={"select": "article_key,seg_index,at", "uid": f"eq.{uid}",
+                "event": "eq.open", "order": "at.desc", "limit": str(limit)},
+    )
+    resp.raise_for_status()
+    seen, out = set(), []
+    for row in resp.json():
+        key = row.get("article_key")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append({"article_key": key, "seg_index": row.get("seg_index") or 0,
+                    "at": row.get("at") or 0})
+    return out

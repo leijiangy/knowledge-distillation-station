@@ -74,6 +74,16 @@ async def health():
     return {"ok": True, "project": settings.PROJECT_NAME}
 
 
+@app.middleware("http")
+async def _no_cache_html(request: Request, call_next):
+    """HTML 页面不做强缓存：本地/线上更新后刷新即可拿到新版，避免旧页面困扰"""
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
+
+
 @app.get("/api/oauth/status")
 async def oauth_status(request: Request, response: Response):
     session = _get_or_create(request, response)
@@ -278,6 +288,8 @@ async def article_meta(request: Request):
                 "badge_text": match.get("AuthorBadgeText") or "",
                 "authority_level": match.get("AuthorityLevel"),
                 "signature": match.get("AuthorSignature") or "",
+                # 该接口的 AuthorSignature 实际是作者主页 UrlToken，用于拼主页链接
+                "author_token": match.get("AuthorSignature") or "",
             }
             content_cache.set(key, meta)
         meta_map[url] = meta
@@ -458,12 +470,12 @@ async def recommend(request: Request, batch: int = 0, force: int = 0):
 # ---- 学习会话（逐段精读，设计见 docs/学习会话设计-定稿.md） ----
 
 def _segment_by_cuts(content: str, cuts: list, index: int):
-    """按切点取第 index 段；返回 (段文本 or None, 总段数)"""
+    """按切点取第 index 段；返回 (段文本 or None, 总段数)。段首尾的换行/空白一律去除。"""
     bounds = [0] + list(cuts or []) + [len(content)]
     total = max(0, len(bounds) - 1)
     if index < 0 or index >= total:
         return None, total
-    return content[bounds[index]:bounds[index + 1]], total
+    return content[bounds[index]:bounds[index + 1]].strip(), total
 
 
 async def _reading_context(request: Request, url: str):
@@ -475,7 +487,7 @@ async def _reading_context(request: Request, url: str):
     key = _norm_key(url)
     item = await store.get(key)
     if not item:
-        return None, key, None, {"code": "NOT_DISTILLED", "message": "这篇还没有全文，先用书签蒸馏。"}
+        return None, key, None, {"code": "NOT_DISTILLED", "message": "这篇还没有全文，先用书签保存。"}
     return item, key, _user_key_id(session), None
 
 
@@ -509,6 +521,22 @@ async def _segment_payload(item: dict, key: str, summary: str, cuts: list,
     }, total
 
 
+def _author_from_collections(uid: str, key: str) -> dict | None:
+    """从收藏夹缓存里按 URL 精确取作者（收藏数据带 Author.Name，取不到返回 None）"""
+    if not uid:
+        return None
+    coll = user_cache.get(user_key("collections:first", uid))
+    for it in ((coll or {}).get("items") or []):
+        if _norm_key(str(it.get("Url") or "")) == key:
+            a = it.get("Author") or {}
+            name = a.get("Name") or ""
+            if name:
+                return {"name": name, "url_token": a.get("UrlToken") or "",
+                        "url": a.get("Url") or ""}
+            return None
+    return None
+
+
 @app.post("/api/reading/open")
 async def reading_open(request: Request):
     """打开阅读会话：无划分则生成划分与全文主旨，返回第 0 段"""
@@ -535,7 +563,8 @@ async def reading_open(request: Request):
     payload, total = await _segment_payload(item, key, summary, cuts, 0, uid)
     await reading_store.append_event(key, uid, "open", 0, None)
     return {"ok": True,
-            "article": {"key": key, "title": item["title"], "summary": summary, "total": total},
+            "article": {"key": key, "title": item["title"], "summary": summary, "total": total,
+                        "author": _author_from_collections(uid, key)},
             "segment": payload}
 
 
@@ -557,6 +586,30 @@ async def reading_segment(request: Request, url: str, seg: int = 0):
     return {"ok": True,
             "article": {"key": key, "title": item["title"], "summary": summary, "total": total},
             "segment": payload}
+
+
+@app.get("/api/reading/history")
+async def reading_history(request: Request):
+    """学习记录：每篇文章最后读到的段落位置（来自 open 埋点）"""
+    session = _current_session(request)
+    _token, login_error = _resolve_token(session)
+    if login_error:
+        return {"ok": False, "error": login_error}
+    uid = _user_key_id(session)
+    try:
+        rows = await reading_store.list_recent_opened(uid)
+    except Exception:
+        return {"ok": False, "error": {"code": "DB_FAILED", "message": "读取学习记录失败，请稍后再试。"}}
+    items = []
+    for row in rows[:30]:
+        art = await store.get(row["article_key"])
+        if not art:
+            continue
+        plan = await reading_store.get_article(row["article_key"])
+        total = len((plan or {}).get("cuts") or []) + 1
+        items.append({"url": row["article_key"], "title": art.get("title") or row["article_key"],
+                      "seg": row["seg_index"], "total": total, "at": row["at"]})
+    return {"ok": True, "items": items}
 
 
 @app.post("/api/reading/selection")
@@ -581,16 +634,22 @@ async def reading_selection(request: Request):
     seg_text, _total = _segment_by_cuts(item["content"], plan.get("cuts") or [], seg)
     if seg_text is None:
         return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
-    if not (0 <= pos_start < pos_end <= len(seg_text)):
-        return {"ok": False, "error": {"code": "BAD_RANGE", "message": "选区范围不合法。"}}
     parent_id = body.get("parent_id")
     parent_id = int(parent_id) if parent_id is not None else None
+    # 层内选区：偏移始终相对父节点的内容文本（节点内容 = 该层的父文本）
+    scope_text = seg_text
+    if parent_id is not None:
+        parent_node = await reading_store.get_node(parent_id)
+        if parent_node is not None:
+            scope_text = parent_node.get("content") or ""
+    if not (0 <= pos_start < pos_end <= len(scope_text)):
+        return {"ok": False, "error": {"code": "BAD_RANGE", "message": "选区范围不合法。"}}
     overlap = await reading_store.find_overlap(key, seg, pos_start, pos_end, parent_id)
     if overlap:
         return {"ok": False, "error": {"code": "OVERLAP", "message": "这段文字已经有解释了。"}}
     try:
         text = await ai.explain_selection(item["title"], plan.get("summary") or "",
-                                          seg_text, seg_text[pos_start:pos_end])
+                                          seg_text, scope_text[pos_start:pos_end])
     except ai.AIError as exc:
         return {"ok": False, "error": {"code": "AI_FAILED", "message": str(exc)}}
     node = await reading_store.create_node(key, seg, "explain", text, uid,
@@ -628,14 +687,19 @@ async def reading_ask(request: Request):
     if seg_text is None:
         return {"ok": False, "error": {"code": "BAD_SEG", "message": "段落不存在。"}}
     anchor_text = ""
-    # 选区校验（无效则清空）
+    # 选区校验（无效则清空）；层内偏移始终相对父节点的内容文本
+    scope_text = seg_text
+    if parent_id is not None:
+        parent_node = await reading_store.get_node(int(parent_id))
+        if parent_node is not None:
+            scope_text = parent_node.get("content") or ""
     if not (isinstance(pos_start, int) and isinstance(pos_end, int)
-            and 0 <= pos_start < pos_end <= len(seg_text)):
+            and 0 <= pos_start < pos_end <= len(scope_text)):
         pos_start = pos_end = None
     # 提问锚点：优先用显式传入的选中文本（右栏解释里选中的内容），否则由区间/父节点推导
     anchor_text = str(body.get("anchor_text") or "").strip()[:600]
     if not anchor_text and pos_start is not None:
-        anchor_text = seg_text[pos_start:pos_end]
+        anchor_text = scope_text[pos_start:pos_end]
     if not anchor_text and parent_id is not None:
         parent = await reading_store.get_node(int(parent_id))
         if parent:

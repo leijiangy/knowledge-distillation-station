@@ -7,7 +7,8 @@
     page: $("page"),
     sidebarToggle: $("sidebar-toggle"), sidebarExpand: $("sidebar-expand"),
     favGroup: $("fav-group"), favParent: $("fav-parent"), favSub: $("fav-sub"),
-    navHome: $("nav-home"), navHistory: $("nav-history"), navRecommend: $("nav-recommend"),
+    navHome: $("nav-home"), navRecommend: $("nav-recommend"),
+    histGroup: $("hist-group"), histParent: $("hist-parent"), histSub: $("hist-sub"),
     viewRecommend: $("view-recommend"), recommendCards: $("recommend-cards"),
     recommendCount: $("recommend-count"), recommendRefresh: $("recommend-refresh"),
     recoSeedHint: $("reco-seed-hint"), recoExpand: $("reco-expand"),
@@ -53,9 +54,9 @@
   let allItems = [];          // 当前收藏夹的全部条目
   let sortMode = "favtime";
   let page = 1;               // 当前页码（客户端分页）
-  let distilledMap = {};      // 已蒸馏内容索引：url(去参) -> {title, length, at}
+  let distilledMap = {};      // 已保存内容索引：url(去参) -> {title, length, at}
 
-  // ---- 蒸馏书签（动态生成：写入当前站点域名；带 #kd=1 来源标记的页面蒸完自动跳回） ----
+  // ---- 保存书签（动态生成：写入当前站点域名；带 #kd=1 来源标记的页面蒸完自动跳回） ----
   function buildBookmarklet() {
     const origin = window.location.origin;
     return [
@@ -78,13 +79,13 @@
       "s=s.split('?')[0];",
       "if(imgs.indexOf(s)<0)imgs.push(s);",
       "}",
-      "if(!confirm('蒸馏这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
+      "if(!confirm('保存这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
       "var fromStation=location.hash.indexOf('kd=1')>=0;",
       "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:location.href.split('#')[0],content:text,images:imgs})})",
       ".then(function(r){return r.json()})",
       ".then(function(d){",
       "if(!d.ok){alert('失败：'+((d.error&&d.error.message)||'未知错误'));return;}",
-      "if(fromStation){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){location.href='" + origin + "/';}},400);}",
+      "if(fromStation){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){location.href='" + origin + "/?saved='+encodeURIComponent(location.href.split('#')[0]);}},400);}",
       "else{alert('✓ 已进入知识蒸馏站（'+text.length+' 字）');}",
       "});",
       "})();",
@@ -118,7 +119,7 @@
     try {
       const data = await api("/api/distilled/content?url=" + encodeURIComponent(url));
       if (!data.ok) throw new Error((data.error && data.error.message) || "读取失败");
-      els.fulltextMeta.textContent = "全文 " + data.length + " 字 · 由「蒸馏书签」从知乎页面送入";
+      els.fulltextMeta.textContent = "全文 " + data.length + " 字 · 由「保存书签」从知乎页面送入";
       els.fulltextBody.textContent = data.content;
     } catch (err) {
       els.fulltextMeta.textContent = err.message || "读取失败";
@@ -227,9 +228,13 @@
       ? `<div class="card-gallery n${galleryImgs.length}">${galleryImgs.map((u) =>
           `<img src="${escapeHtml(thumbCover(u))}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join("")}</div>`
       : "";
+    // 已保存：标题/卡片点击直接进入学习；未保存：点击去知乎原文（新标签）
+    const titleHtml = dist
+      ? `<a class="card-title" href="/reading.html?url=${encodeURIComponent(item.Url || "")}">${escapeHtml(item.Title || "（无标题）")}</a>`
+      : `<a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>`;
     const badgeHtml = dist
-      ? `<button class="distill-badge" data-distill="${escapeHtml(dKey)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`
-      : `<button class="go-distill" data-godistill="${escapeHtml(dKey)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}">🧪 去蒸馏全文</button>`;
+      ? `<button class="distill-badge" data-learn="${escapeHtml(item.Url || "")}">✓ 已保存 · 全文 ${dist.length} 字 · 开始学习 →</button>`
+      : `<button class="go-distill" data-godistill="${escapeHtml(dKey)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}">🧪 去保存全文</button>`;
     const labels = ["approval", "richness", "credibility"].map((kind) => {
       const metric = m[kind] || {};
       const basis = (metric.basis || []).join(" · ");
@@ -237,7 +242,7 @@
     }).join("");
     return `
       <article class="card" data-url="${escapeHtml(item.Url || "")}" data-title="${escapeHtml(item.Title || "")}">
-        <a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>
+        ${titleHtml}
         <div class="meta">
           <span class="tag">${TYPE_NAMES[item.ContentType] || item.ContentType || "内容"}</span>
           <span class="meta-author">
@@ -278,6 +283,25 @@
   }
 
   function bindCardActions(container) {
+    // 整卡点击：已保存 → 直接进入学习；未保存 → 去知乎原文（新标签）
+    container.querySelectorAll("article.card[data-url]").forEach((card) => {
+      card.style.cursor = "pointer";
+      card.addEventListener("click", (e) => {
+        if (e.target.closest("a, button")) return;   // 链接与按钮各自处理
+        const url = card.getAttribute("data-url") || "";
+        if (!url) return;
+        if (distilledMap[normKey(url)]) location.href = "/reading.html?url=" + encodeURIComponent(url);
+        else window.open(url, "_blank", "noopener");
+      });
+    });
+    // 已保存徽章：直接进入学习
+    container.querySelectorAll("[data-learn]").forEach((btn) => {
+      const go = (e) => {
+        e.preventDefault();
+        location.href = "/reading.html?url=" + encodeURIComponent(btn.getAttribute("data-learn") || "");
+      };
+      btn.addEventListener("click", go);
+    });
     container.querySelectorAll("[data-distill]").forEach((btn) => {
       btn.addEventListener("click", () => openFulltext(btn.getAttribute("data-distill"), btn.getAttribute("data-title")));
     });
@@ -494,8 +518,8 @@
     els.favSub.querySelectorAll(".nav-subitem").forEach((btn) => {
       btn.addEventListener("click", () => {
         const token = btn.getAttribute("data-token");
-        if (token === String(currentToken)) return;
-        loadCollections(token, false);
+        // 已选中的收藏夹：点一次强制刷新（给用户反馈）；否则切换
+        loadCollections(token, token === String(currentToken));
       });
     });
   }
@@ -531,7 +555,7 @@
       }
       allItems = data.items || [];
       page = 1;
-      // 拉取"已蒸馏"索引（书签送进来的全文标记）
+      // 拉取"已保存"索引（书签送进来的全文标记）
       await refreshDistilled();
       const meta = data.favlist || {};
       if (meta.UrlToken != null) currentToken = String(meta.UrlToken);
@@ -591,6 +615,12 @@
       showHome();
       return;
     }
+    // 保存完成跳回（?saved=文章地址）：直接进入该篇的学习
+    const savedUrl = params.get("saved");
+    if (savedUrl) {
+      location.href = "/reading.html?url=" + encodeURIComponent(savedUrl);
+      return;
+    }
     showView("collections");
     await loadFavlists();
     await loadCollections(null, false);
@@ -610,11 +640,14 @@
       ? `<img class="author-badge" src="${escapeHtml(item.AuthorBadge)}" alt="">`
       : "";
     const actionHtml = dist
-      ? `<button class="distill-badge" data-distill="${escapeHtml(key)}" data-title="${escapeHtml(item.Title || "")}">✓ 已蒸馏 · 全文 ${dist.length} 字</button>`
-      : `<button class="go-distill" data-godistill="${escapeHtml(key)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}">🧪 去蒸馏全文</button>`;
+      ? `<button class="distill-badge" data-learn="${escapeHtml(item.Url || "")}">✓ 已保存 · 全文 ${dist.length} 字 · 开始学习 →</button>`
+      : `<button class="go-distill" data-godistill="${escapeHtml(key)}" data-gourl="${escapeHtml(item.Url || "")}" data-gotitle="${escapeHtml(item.Title || "")}">🧪 去保存全文</button>`;
+    const titleHtml = dist
+      ? `<a class="card-title" href="/reading.html?url=${encodeURIComponent(item.Url || "")}">${escapeHtml(item.Title || "（无标题）")}</a>`
+      : `<a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>`;
     return `
       <article class="card" data-url="${escapeHtml(item.Url || "")}" data-title="${escapeHtml(item.Title || "")}">
-        <a class="card-title" href="${escapeHtml(item.Url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.Title || "（无标题）")}</a>
+        ${titleHtml}
         <div class="meta">
           <span class="tag">${TYPE_NAMES[item.ContentType] || item.ContentType || "内容"}</span>
           <span class="meta-author">
@@ -680,7 +713,7 @@
     }
   }
 
-  // 已蒸馏索引变化时，刷新当前可见视图（收藏 / 推荐）
+  // 已保存索引变化时，刷新当前可见视图（收藏 / 推荐）
   async function checkDistilledUpdates() {
     try {
       const data = await api("/api/distilled");
@@ -697,7 +730,11 @@
   // ---- 事件 ----
   els.sidebarToggle.addEventListener("click", () => els.page.classList.add("sidebar-collapsed"));
   els.sidebarExpand.addEventListener("click", () => els.page.classList.remove("sidebar-collapsed"));
-  els.favParent.addEventListener("click", () => els.favGroup.classList.toggle("open"));
+  // 「我的收藏」：进入收藏视图并展开收藏夹列表
+  els.favParent.addEventListener("click", () => {
+    els.favGroup.classList.add("open");
+    showView("collections");
+  });
   els.sortSelect.addEventListener("change", () => {
     sortMode = els.sortSelect.value;
     page = 1;
@@ -713,8 +750,37 @@
     }
     if (status && status.callback_configured) location.href = "/api/oauth/start";
   });
-  // 占位导航：学习记录（暂不跳转）
-  els.navHistory.addEventListener("click", (event) => event.preventDefault());
+  // 学习记录：侧边栏下拉会话列表（点条目恢复阅读位置；底部可查看全部）
+  let histListLoaded = false;
+  async function loadHistoryList() {
+    const sub = els.histSub;
+    if (!sub) return;
+    try {
+      const data = await api("/api/reading/history");
+      const items = (data.items || []).slice(0, 8);
+      if (!items.length) {
+        sub.innerHTML = '<div class="nav-sub-loading">还没有学习记录</div>';
+        return;
+      }
+      histListLoaded = true;
+      sub.innerHTML = items.map((it) => {
+        const href = "/reading.html?url=" + encodeURIComponent(it.url) + "&seg=" + (it.seg || 0);
+        const label = it.total > 1 ? ((it.seg || 0) + 1) + "/" + it.total : "";
+        return '<a class="nav-subitem" href="' + href + '" title="' + escapeHtml(it.title || "") + '">'
+          + '<span class="nav-subitem-title">' + escapeHtml(it.title || it.url) + '</span>'
+          + (label ? '<span class="sub-count">' + label + '</span>' : "")
+          + "</a>";
+      }).join("");
+    } catch (err) {
+      sub.innerHTML = '<div class="nav-sub-loading">加载失败</div>';
+    }
+  }
+  if (els.histParent) {
+    els.histParent.addEventListener("click", () => {
+      const open = els.histGroup.classList.toggle("open");
+      if (open && !histListLoaded) loadHistoryList();
+    });
+  }
 
   // 首页 / 收藏视图切换
   els.navHome.addEventListener("click", () => showHome());
@@ -739,12 +805,12 @@
     els.homeGotoCollections.addEventListener("click", () => showView("collections"));
   }
 
-  // 蒸馏书签：初始化 / 复制书签（富文本，可粘贴成书签）/ 复制代码
+  // 保存书签：初始化 / 复制书签（富文本，可粘贴成书签）/ 复制代码
   initBookmarklet();
 
   async function copyBookmarkAsLink() {
     const code = buildBookmarklet();
-    const html = '<a href="' + escapeHtml(code) + '">🧪 蒸馏这篇文章</a>';
+    const html = '<a href="' + escapeHtml(code) + '">🧪 保存这篇文章</a>';
     const hint = els.copyBookmarkHint;
     try {
       if (navigator.clipboard && window.ClipboardItem) {
@@ -788,7 +854,7 @@
     if (event.key === "Escape") closeModal(els.fulltextModal);
   });
 
-  // ---- 「去蒸馏全文」：打开知乎原文 + 自动等待结果（全文送达后卡片自动点亮） ----
+  // ---- 「去保存全文」：打开知乎原文 + 自动等待结果（全文送达后卡片自动点亮） ----
   const WATCH_INTERVAL = 2500;    // 轮询间隔（毫秒）
   const WATCH_TIMEOUT = 180000;   // 3 分钟没等到就提示
   let watch = null;               // {key, title, timer, deadline}
@@ -842,13 +908,13 @@
       els.distillGuideDot.hidden = false;
       els.distillGuideTitle.textContent = "等待全文送达…";
       els.distillGuideBody.innerHTML =
-        "已打开知乎原文。请在那一页点一下书签栏的 <b>「🧪 蒸馏这篇文章」</b>，确认后这里会自动亮起。"
+        "已打开知乎原文。请在那一页点一下书签栏的 <b>「🧪 保存这篇文章」</b>，确认后这里会自动亮起。"
         + (title ? `<div class="gd-target">《${escapeHtml(title)}》</div>` : "");
     } else if (state === "success") {
       els.distillGuideDot.hidden = true;
-      els.distillGuideTitle.textContent = "✓ 蒸馏成功";
+      els.distillGuideTitle.textContent = "✓ 保存成功";
       els.distillGuideBody.innerHTML =
-        `全文 <b>${length || 0} 字</b>已存入，卡片上的「✓ 已蒸馏」已点亮，点击即可读全文。`
+        `全文 <b>${length || 0} 字</b>已存入，卡片上的「✓ 已保存」已点亮，点击即可进入学习。`
         + (title ? `<div class="gd-target">《${escapeHtml(title)}》</div>` : "");
       setTimeout(() => { if (!watch && els.distillGuide) els.distillGuide.hidden = true; }, 12000);
     } else if (state === "timeout") {
