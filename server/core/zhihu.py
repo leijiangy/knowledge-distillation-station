@@ -30,6 +30,16 @@ def clean_image_url(raw) -> str:
     return s
 
 
+def is_image_url(raw) -> bool:
+    """是不是知乎图床的图片地址。
+
+    知乎点开大图（灯箱）时地址栏会变成 `https://pic*.zhimg.com/v2-….webp`，而页面 DOM
+    仍是那篇文章——此时保存会把全文存到图片地址这个键上，卡片与学习记录永远对不上。
+    """
+    host = (urlparse(str(raw or "")).hostname or "").lower()
+    return host == "zhimg.com" or host.endswith(".zhimg.com")
+
+
 def client() -> httpx.AsyncClient:
     """统一 HTTP 客户端。
 

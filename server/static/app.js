@@ -67,6 +67,11 @@
       "if(confirm((isZhihu?'这个知乎页面不是回答或文章，':'当前不是知乎页面，')+'是否前往知识蒸馏站？')){window.open('" + origin + "/','_blank');}",
       "return;}",
       "var title=(document.title||'').replace(/^(\\([^)]*\\)\\s+)+/,'').replace(/ ?[-—|] ?知乎.*$/,'').trim();",
+      // 页面地址优先取 canonical / og:url：知乎点开图片（灯箱）时地址栏会变成图片地址，
+      // 此时 DOM 还是文章，直接读 location.href 会把全文存到图片地址这个键上，卡片永远对不上
+      "var canon=document.querySelector('link[rel=canonical]')||document.querySelector('meta[property=\"og:url\"]');",
+      "var pageUrl=((canon&&(canon.href||canon.content))||location.href).split('#')[0];",
+      "if(/\\.zhimg\\.com/.test(pageUrl.split('/')[2]||'')){alert('当前地址是图片地址（可能是点开了大图）：请回到文章页面再点这个书签。');return;}",
       // 配图：先在每张图前插一个不可见标记，innerText 会把标记放在图片真实位置上，
       // 由此得到图片在正文里的字符下标；读完再把标记从文本和 DOM 里清掉（正文逐字不变）
       "var seen=[];var picked=[];var list=el.querySelectorAll('img');",
@@ -97,7 +102,7 @@
       "if(text.length<100){alert('内容过短（'+text.length+' 字），可能不是文章页');return;}",
       "if(!confirm('保存这篇文章？\\n\\n'+title+'\\n全文约 '+text.length+' 字'+(imgs.length?('，含 '+imgs.length+' 张配图'):''))){return;}",
       "var fromStation=location.hash.indexOf('kd=1')>=0;",
-      "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:location.href.split('#')[0],content:text,images:imgs})})",
+      "fetch('" + origin + "/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,url:pageUrl,content:text,images:imgs})})",
       ".then(function(r){return r.json()})",
       ".then(function(d){",
       "if(!d.ok){alert('失败：'+((d.error&&d.error.message)||'未知错误'));return;}",

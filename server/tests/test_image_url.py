@@ -25,3 +25,16 @@ def test_rejects_empty_and_overlong():
     assert _clean_image_url("") == ""
     assert _clean_image_url(None) == ""
     assert _clean_image_url("https://pic1.zhimg.com/" + "a" * 600) == ""
+
+
+def test_is_image_url_detects_image_hosts():
+    """知乎点开大图时地址栏会变成图片地址——那种地址不能当成文章地址保存"""
+    from core.zhihu import is_image_url
+    assert is_image_url("https://pic1.zhimg.com/v2-abc.jpg")
+    assert is_image_url("https://pic4.zhimg.com/v2-abc_1")
+    assert is_image_url("https://zhimg.com/x.webp")
+    assert not is_image_url("https://www.zhihu.com/answer/123")
+    assert not is_image_url("https://zhuanlan.zhihu.com/p/123")
+    assert not is_image_url("https://evil.com/zhimg.com/x.jpg")
+    assert not is_image_url("")
+    assert not is_image_url(None)
