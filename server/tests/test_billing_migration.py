@@ -98,3 +98,18 @@ def test_migration_rejects_direct_private_and_billing_access():
     assert "content_updates,reading_nodes from public" in sql
     assert "grant execute on function get_billing_account" in sql
     assert "to service_role" in sql
+
+
+def test_migration_does_not_mix_rowtype_and_scalar_into_targets():
+    """PostgreSQL rejects a row variable in a multi-item INTO target list."""
+    sql = _sql()
+    row_variables = re.findall(
+        r"^\s*(v_[a-z0-9_]+)\s+[a-z0-9_]+%rowtype\s*;",
+        sql,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    for variable in row_variables:
+        assert not re.search(rf"\binto\s+{variable}\s*,", sql, re.IGNORECASE)
+        assert not re.search(
+            rf"\binto\s+[^;\n,]+\s*,\s*{variable}\b", sql, re.IGNORECASE
+        )

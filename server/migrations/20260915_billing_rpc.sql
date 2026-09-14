@@ -609,9 +609,9 @@ begin
     raise exception using errcode='P0001', message='NODE_NOT_FOUND';
   end if;
   if v_replace is not null then
-    select n,o.action into v_replace_node,v_replace_action
-    from reading_nodes n left join ai_operations o on o.id=n.operation_id
-    where n.id=v_replace;
+    select n.* into v_replace_node from reading_nodes n where n.id=v_replace;
+    select o.action into v_replace_action from ai_operations o
+    where o.id=v_replace_node.operation_id;
     if v_replace_node.kind is distinct from case when v_action='advanced' then 'explain' else v_action end
        or v_replace_node.parent_id is distinct from v_parent
        or v_replace_node.pos_start is distinct from nullif(p_intent->>'pos_start','')::bigint
