@@ -1094,7 +1094,8 @@ async def reading_history(request: Request):
         return api_error(account_error["code"], account_error["message"], 401)
     try:
         rows = await reading_store.list_recent_opened(uid)
-    except Exception:
+    except Exception as exc:
+        print(f"[reading] 读取个人学习记录失败：{exc}")
         return {"ok": False, "error": {"code": "DB_FAILED", "message": "读取学习记录失败，请稍后再试。"}}
     items = []
     for row in rows[:30]:

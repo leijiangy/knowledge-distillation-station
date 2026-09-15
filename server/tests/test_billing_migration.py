@@ -72,6 +72,13 @@ def test_migration_matches_python_rpc_contracts():
         assert _parameters(sql, name) == parameters
 
 
+def test_migration_adds_history_version_columns():
+    sql = _sql()
+    assert "alter table reading_events" in sql
+    assert "add column if not exists git_commit text" in sql
+    assert "add column if not exists segment_id uuid" in sql
+
+
 def test_migration_pins_billing_and_recovery_contracts():
     sql = _sql()
     for fixed_value in (

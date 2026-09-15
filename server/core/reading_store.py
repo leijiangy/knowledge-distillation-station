@@ -11,6 +11,8 @@
 import json
 import time
 
+import httpx
+
 from .store import _REST, _check_config, _get_client, rpc
 
 
@@ -230,12 +232,20 @@ def collapse_history(rows: list) -> list:
 async def list_recent_opened(uid: str, limit: int = 200) -> list:
     """学习记录：每篇文章最后读到哪一段（来自 open 埋点）"""
     _check_config()
-    resp = await _get_client().get(
-        f"{_REST}/reading_events",
-        params={"select": "article_key,git_commit,segment_id,seg_index,at", "uid": f"eq.{uid}",
-                "event": "eq.open", "order": "at.desc", "limit": str(limit)},
-    )
-    resp.raise_for_status()
+    client = _get_client()
+    params = {"select": "article_key,git_commit,segment_id,seg_index,at",
+              "uid": f"eq.{uid}", "event": "eq.open",
+              "order": "at.desc", "limit": str(limit)}
+    resp = await client.get(f"{_REST}/reading_events", params=params)
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text.lower()
+        if "git_commit" not in detail and "segment_id" not in detail:
+            raise
+        params["select"] = "article_key,seg_index,at"
+        resp = await client.get(f"{_REST}/reading_events", params=params)
+        resp.raise_for_status()
     return collapse_history(resp.json())
 
 

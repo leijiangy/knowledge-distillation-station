@@ -222,6 +222,10 @@ alter table distilled
   add column if not exists current_commit text,
   add column if not exists updated_by_uid text;
 
+alter table reading_events
+  add column if not exists git_commit text,
+  add column if not exists segment_id uuid;
+
 alter table reading_nodes
   add column if not exists segment_id uuid,
   add column if not exists generated_commit text,
