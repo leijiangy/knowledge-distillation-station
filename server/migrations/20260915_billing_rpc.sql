@@ -88,6 +88,7 @@ create table if not exists demo_recharges (
       amount_fen::numeric * recharge_credits_per_cny::numeric * 10000
   )
 );
+alter table demo_recharges enable row level security;
 
 create table if not exists ai_operations (
   id uuid primary key,
@@ -1400,19 +1401,31 @@ revoke execute on function _billing_assert_service_role(),_billing_sha256(jsonb)
   _billing_active_key(text,jsonb,text),_reading_segment_index(text,text,uuid),
   _reading_branch_visible(bigint,text,text,uuid,boolean),
   _billing_result_is_valid(ai_operations) from public;
+revoke execute on function apply_demo_recharge(
+  text,uuid,uuid,text,text,bigint,bigint,bigint
+) from public;
 
 do $$
 begin
   if exists(select 1 from pg_roles where rolname='anon') then
     execute 'revoke all on billing_settings,membership_entitlements,daily_token_quotas,credit_wallets,demo_recharges,ai_operations,credit_ledger,content_updates,reading_nodes from anon';
+    execute 'revoke execute on function apply_demo_recharge(text,uuid,uuid,text,text,bigint,bigint,bigint) from anon';
   end if;
   if exists(select 1 from pg_roles where rolname='authenticated') then
     execute 'revoke all on billing_settings,membership_entitlements,daily_token_quotas,credit_wallets,demo_recharges,ai_operations,credit_ledger,content_updates,reading_nodes from authenticated';
+    execute 'revoke execute on function apply_demo_recharge(text,uuid,uuid,text,text,bigint,bigint,bigint) from authenticated';
   end if;
   if exists(select 1 from pg_roles where rolname='service_role') then
     execute 'grant select,insert,update on billing_settings,membership_entitlements,daily_token_quotas,credit_wallets,demo_recharges,ai_operations,credit_ledger,content_updates,reading_nodes,reading_articles,distilled to service_role';
     execute 'grant usage,select on all sequences in schema public to service_role';
     execute 'grant execute on function get_billing_account(text),apply_demo_recharge(text,uuid,uuid,text,text,bigint,bigint,bigint),create_ai_quote(text,uuid,uuid,text,jsonb,jsonb,jsonb,timestamptz,timestamptz,timestamptz,bigint,bigint),reserve_ai_operation(text,uuid),claim_ai_operation(uuid),record_ai_result(uuid,uuid,jsonb,text),finalize_ai_operation(uuid),waive_ai_operation(uuid,text),begin_content_update(text,uuid,uuid,text,text,text,jsonb),claim_content_update(uuid),save_content_candidate(uuid,uuid,jsonb),mark_content_git_saved(uuid,uuid,text),publish_content_update(uuid,uuid),fail_content_update(uuid,uuid,text),list_private_segment_nodes(text,text,uuid,boolean),get_private_node(text,bigint,text,uuid,boolean),delete_private_node_tree(text,bigint,text,uuid) to service_role';
+    if not exists(
+      select 1 from pg_policies
+      where schemaname='public' and tablename='demo_recharges'
+        and policyname='demo_recharges_service_role_all'
+    ) then
+      execute 'create policy demo_recharges_service_role_all on demo_recharges for all to service_role using (true) with check (true)';
+    end if;
   end if;
 end;
 $$;

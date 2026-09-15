@@ -115,6 +115,9 @@ def test_demo_recharge_is_atomic_idempotent_and_ledgered():
     assert "IDEMPOTENCY_CONFLICT" in section
     assert "update credit_wallets set" in section
     assert "'payment_credit'" in section
+    assert "alter table demo_recharges enable row level security" in sql
+    assert "demo_recharges_service_role_all" in sql
+    assert "revoke execute on function apply_demo_recharge" in sql
 
 
 def test_migration_does_not_mix_rowtype_and_scalar_into_targets():
