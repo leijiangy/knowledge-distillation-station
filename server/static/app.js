@@ -765,6 +765,7 @@
     els.favSub.querySelectorAll(".nav-subitem").forEach((btn) => {
       btn.addEventListener("click", () => {
         const token = btn.getAttribute("data-token");
+        showView("collections");
         // 已选中的收藏夹：点一次强制刷新（给用户反馈）；否则切换
         loadCollections(token, token === String(currentToken));
       });
@@ -1034,15 +1035,9 @@
   // ---- 事件 ----
   els.sidebarToggle.addEventListener("click", () => els.page.classList.add("sidebar-collapsed"));
   els.sidebarExpand.addEventListener("click", () => els.page.classList.remove("sidebar-collapsed"));
-  // 「我的收藏」：从其他视图进入时展开；已在收藏视图时正常切换开合
+  // 「我的收藏」标题只控制下拉；进入具体收藏夹由下方收藏夹条目负责。
   els.favParent.addEventListener("click", () => {
-    const enteringCollections = els.viewCollections.hidden;
-    showView("collections");
-    if (enteringCollections) {
-      els.favGroup.classList.add("open");
-    } else {
-      els.favGroup.classList.toggle("open");
-    }
+    els.favGroup.classList.toggle("open");
     els.favParent.setAttribute("aria-expanded", String(els.favGroup.classList.contains("open")));
   });
   els.sortSelect.addEventListener("change", () => {
