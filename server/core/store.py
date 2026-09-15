@@ -203,7 +203,7 @@ async def begin_content_update(*, uid: str, update_id: str, idempotency_key: str
 
 async def claim_content_update(executor_token: str) -> dict | None:
     data = await rpc("claim_content_update", {"p_executor_token": executor_token})
-    return data[0] if isinstance(data, list) and data else None
+    return data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
 
 
 async def save_content_candidate(update_id: str, executor_token: str,

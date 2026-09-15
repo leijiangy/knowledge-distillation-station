@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
+import asyncio
 from datetime import datetime, timezone
 from itertools import count
 from uuid import UUID
 
 import pytest
+
+from core import store
 
 from core.content_versions import (
     BareContentRepository,
@@ -330,3 +333,14 @@ def test_commit_time_must_be_fixed_timezone_aware_value(tmp_path):
             content="甲", meta=META,
             manifest=build_manifest("甲", [], uuid_factory=ids()), committed_at="now",
         )
+
+
+def test_claim_content_update_accepts_postgrest_object_and_array(monkeypatch):
+    row = {"id": "00000000-0000-4000-8000-000000000099", "state": "building"}
+    for response in (row, [row]):
+        async def fake_rpc(_name, _payload, value=response):
+            return value
+        monkeypatch.setattr(store, "rpc", fake_rpc)
+        assert asyncio.run(store.claim_content_update(
+            "00000000-0000-4000-8000-000000000001"
+        )) == row
