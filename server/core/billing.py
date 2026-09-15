@@ -684,21 +684,17 @@ async def account(uid: str) -> dict:
     return await _rpc_row("get_billing_account", {"actor_uid": uid})
 
 
-async def apply_demo_recharge(*, uid: str, recharge_id: str,
-                              idempotency_key: str, request_hash_value: str,
-                              plan_id: str, amount_fen: int,
-                              recharge_credits_per_cny: int,
-                              credit_microcredits: int) -> dict:
-    """原子记录一次演示充值；金额只能由服务端白名单套餐提供。"""
-    return await _rpc_row("apply_demo_recharge", {
+async def apply_demo_membership(*, uid: str, entitlement_id: str,
+                                idempotency_key: str,
+                                request_hash_value: str,
+                                amount_fen: int) -> dict:
+    """原子开通或续期一次演示会员；价格与期限由服务端固定。"""
+    return await _rpc_row("apply_demo_membership", {
         "actor_uid": uid,
-        "p_recharge_id": recharge_id,
+        "p_entitlement_id": entitlement_id,
         "p_idempotency_key": idempotency_key,
         "p_request_hash": request_hash_value,
-        "p_plan_id": plan_id,
         "p_amount_fen": amount_fen,
-        "p_recharge_credits_per_cny": recharge_credits_per_cny,
-        "p_credit_microcredits": credit_microcredits,
     })
 
 

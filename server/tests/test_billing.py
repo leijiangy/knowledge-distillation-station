@@ -469,65 +469,61 @@ def test_record_result_normalizes_usage_before_rpc(monkeypatch):
     assert captured["payload"]["p_result_json"]["usage"]["total_tokens"] == 350
 
 
-def test_recharge_plans_are_server_whitelisted(monkeypatch):
-    monkeypatch.setattr(main.settings, "RECHARGE_PLANS_JSON",
-                        '[{"id":"demo_10","amount_fen":100}]')
-    monkeypatch.setattr(main.settings, "RECHARGE_CREDITS_PER_CNY", "1000")
-    plans, rate = main._configured_recharge_plans()
-    assert rate == 1000
-    assert plans["demo_10"]["points"] == 1000
-    monkeypatch.setattr(main.settings, "RECHARGE_PLANS_JSON",
-                        '[{"id":"same","amount_fen":100},{"id":"same","amount_fen":200}]')
-    with pytest.raises(ValueError):
-        main._configured_recharge_plans()
+def test_membership_plan_is_single_server_owned_product(monkeypatch):
+    monkeypatch.setattr(main, "require_account", lambda _request: ("42", None))
+    monkeypatch.setattr(main.settings, "RECHARGE_ENABLED", True)
+    response = asyncio.run(main.billing_plans(SimpleNamespace()))
+    membership = response["membership"]
+    assert membership == {
+        "available": True,
+        "tier": "premium",
+        "duration_days": 30,
+        "monthly_price_fen": 1990,
+        "daily_token_limit": 500_000,
+    }
 
 
-def test_demo_recharge_requires_login(monkeypatch):
+def test_demo_membership_requires_login(monkeypatch):
     monkeypatch.setattr(
         main, "require_account",
         lambda _request: (None, {"code": "LOGIN_REQUIRED", "message": "请登录"}),
     )
-    response = asyncio.run(main.billing_recharge(SimpleNamespace()))
+    response = asyncio.run(main.billing_membership(SimpleNamespace()))
     assert response.status_code == 401
 
 
-def test_demo_recharge_uses_server_plan_and_idempotency_key(monkeypatch):
+def test_demo_membership_uses_server_price_and_idempotency_key(monkeypatch):
     idem = "00000000-0000-4000-8000-000000000001"
     monkeypatch.setattr(main, "require_account", lambda _request: ("42", None))
     monkeypatch.setattr(main.settings, "RECHARGE_ENABLED", True)
-    monkeypatch.setattr(main.settings, "RECHARGE_PLANS_JSON",
-                        '[{"id":"demo_10","amount_fen":100}]')
-    monkeypatch.setattr(main.settings, "RECHARGE_CREDITS_PER_CNY", "1000")
     apply = AsyncMock(return_value={
         "id": "00000000-0000-4000-8000-000000000002",
-        "credited": True, "balance_microcredits": 1_000_000_000,
+        "activated": True,
+        "membership_expires_at": "2026-10-15T00:00:00+00:00",
     })
-    monkeypatch.setattr(main.billing, "apply_demo_recharge", apply)
+    monkeypatch.setattr(main.billing, "apply_demo_membership", apply)
     request = SimpleNamespace(json=AsyncMock(return_value={
-        "plan_id": "demo_10", "idempotency_key": idem,
-        "amount_fen": 1, "points": 999999,
+        "idempotency_key": idem, "amount_fen": 1, "duration_days": 999,
     }))
-    result = asyncio.run(main.billing_recharge(request))
-    assert result["ok"] is True and result["points_added"] == 1000
+    result = asyncio.run(main.billing_membership(request))
+    assert result["ok"] is True
+    assert result["activated"] is True
+    assert result["amount_fen"] == 1990
+    assert result["duration_days"] == 30
     kwargs = apply.await_args.kwargs
     assert kwargs["uid"] == "42"
     assert kwargs["idempotency_key"] == idem
-    assert kwargs["amount_fen"] == 100
-    assert kwargs["credit_microcredits"] == 1_000_000_000
+    assert kwargs["amount_fen"] == 1990
 
 
-def test_demo_recharge_rejects_plan_outside_server_whitelist(monkeypatch):
+def test_demo_membership_rejects_invalid_idempotency_key(monkeypatch):
     monkeypatch.setattr(main, "require_account", lambda _request: ("42", None))
     monkeypatch.setattr(main.settings, "RECHARGE_ENABLED", True)
-    monkeypatch.setattr(main.settings, "RECHARGE_PLANS_JSON",
-                        '[{"id":"demo_10","amount_fen":100}]')
-    monkeypatch.setattr(main.settings, "RECHARGE_CREDITS_PER_CNY", "1000")
     apply = AsyncMock()
-    monkeypatch.setattr(main.billing, "apply_demo_recharge", apply)
+    monkeypatch.setattr(main.billing, "apply_demo_membership", apply)
     request = SimpleNamespace(json=AsyncMock(return_value={
-        "plan_id": "forged", "idempotency_key":
-        "00000000-0000-4000-8000-000000000001",
+        "idempotency_key": "not-a-uuid",
     }))
-    response = asyncio.run(main.billing_recharge(request))
+    response = asyncio.run(main.billing_membership(request))
     assert response.status_code == 422
     apply.assert_not_awaited()

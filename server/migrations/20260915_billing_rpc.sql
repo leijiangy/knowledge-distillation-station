@@ -18,20 +18,16 @@ create table if not exists billing_settings (
   standard_period_tokens bigint not null check (standard_period_tokens = 50000),
   premium_period_tokens bigint not null check (premium_period_tokens = 500000),
   premium_monthly_price_fen bigint not null check (premium_monthly_price_fen = 1990),
-  recharge_enabled boolean not null default false,
-  recharge_credits_per_cny bigint null check (
-    recharge_credits_per_cny is null or recharge_credits_per_cny > 0
-  ),
   updated_at timestamptz not null default now()
 );
 
 insert into billing_settings (
   id, billing_enabled, billing_rule, text_model, quota_timezone,
   quota_reset_hour, standard_period_tokens, premium_period_tokens,
-  premium_monthly_price_fen, recharge_enabled, recharge_credits_per_cny
+  premium_monthly_price_fen
 ) values (
   1, false, 'total_tokens_1_to_1', 'deepseek-flash', 'Asia/Shanghai',
-  4, 50000, 500000, 1990, false, null
+  4, 50000, 500000, 1990
 ) on conflict (id) do nothing;
 
 create table if not exists membership_entitlements (
@@ -43,12 +39,25 @@ create table if not exists membership_entitlements (
   status text not null check (status in ('active', 'expired', 'revoked')),
   source text not null,
   provider_ref text null,
+  idempotency_key uuid null,
+  request_hash text null,
+  amount_fen bigint null check (amount_fen is null or amount_fen = 1990),
   created_at timestamptz not null default now(),
   check (ends_at > starts_at)
 );
 
 create index if not exists membership_entitlements_uid_window_idx
   on membership_entitlements (uid, starts_at, ends_at);
+
+alter table membership_entitlements
+  add column if not exists idempotency_key uuid null;
+alter table membership_entitlements
+  add column if not exists request_hash text null;
+alter table membership_entitlements
+  add column if not exists amount_fen bigint null;
+create unique index if not exists membership_entitlements_uid_idempotency_uidx
+  on membership_entitlements (uid, idempotency_key)
+  where idempotency_key is not null;
 
 create table if not exists daily_token_quotas (
   uid text not null,
@@ -71,24 +80,6 @@ create table if not exists credit_wallets (
   updated_at timestamptz not null default now(),
   check (balance_microcredits >= ai_reserved_microcredits + refund_reserved_microcredits)
 );
-
-create table if not exists demo_recharges (
-  id uuid primary key,
-  uid text not null,
-  idempotency_key uuid not null,
-  request_hash text not null,
-  plan_id text not null,
-  amount_fen bigint not null check (amount_fen > 0),
-  recharge_credits_per_cny bigint not null check (recharge_credits_per_cny > 0),
-  credit_microcredits bigint not null check (credit_microcredits > 0),
-  created_at timestamptz not null default now(),
-  unique (uid, idempotency_key),
-  check (
-    credit_microcredits::numeric =
-      amount_fen::numeric * recharge_credits_per_cny::numeric * 10000
-  )
-);
-alter table demo_recharges enable row level security;
 
 create table if not exists ai_operations (
   id uuid primary key,
@@ -162,7 +153,7 @@ create table if not exists credit_ledger (
   uid text not null,
   event_key text not null unique,
   kind text not null check (
-    kind in ('ai_reserve', 'ai_settle', 'ai_release', 'payment_credit')
+    kind in ('ai_reserve', 'ai_settle', 'ai_release')
   ),
   ai_operation_id uuid null references ai_operations(id),
   payment_order_id uuid null,
@@ -180,11 +171,6 @@ create table if not exists credit_ledger (
   refund_reserved_after bigint not null,
   created_at timestamptz not null default now()
 );
-
--- 兼容已执行过旧迁移的环境：更新自动生成的单列kind约束。
-alter table credit_ledger drop constraint if exists credit_ledger_kind_check;
-alter table credit_ledger add constraint credit_ledger_kind_check
-  check (kind in ('ai_reserve', 'ai_settle', 'ai_release', 'payment_credit'));
 
 create index if not exists credit_ledger_uid_id_idx on credit_ledger (uid, id desc);
 
@@ -552,74 +538,70 @@ begin
 end;
 $$;
 
-create or replace function apply_demo_recharge(
-  actor_uid text, p_recharge_id uuid, p_idempotency_key uuid,
-  p_request_hash text, p_plan_id text, p_amount_fen bigint,
-  p_recharge_credits_per_cny bigint, p_credit_microcredits bigint
+create or replace function apply_demo_membership(
+  actor_uid text, p_entitlement_id uuid, p_idempotency_key uuid,
+  p_request_hash text, p_amount_fen bigint
 ) returns jsonb language plpgsql security invoker as $$
 declare
-  v_existing demo_recharges%rowtype;
-  v_wallet credit_wallets%rowtype;
+  v_existing membership_entitlements%rowtype;
+  v_now timestamptz := clock_timestamp();
+  v_current_expires timestamptz;
+  v_starts timestamptz;
+  v_ends timestamptz;
 begin
   perform _billing_assert_service_role();
   if nullif(btrim(actor_uid),'') is null
      or nullif(btrim(p_request_hash),'') is null
-     or nullif(btrim(p_plan_id),'') is null
-     or p_amount_fen <= 0 or p_recharge_credits_per_cny <= 0
-     or p_credit_microcredits <= 0
-     or p_credit_microcredits::numeric <>
-        p_amount_fen::numeric * p_recharge_credits_per_cny::numeric * 10000
+     or p_amount_fen <> 1990
   then
-    raise exception using errcode='22023', message='INVALID_INPUT';
+    raise exception using errcode='22023',message='INVALID_INPUT';
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(
-    'demo-recharge|' || actor_uid || '|' || p_idempotency_key::text, 0
-  ));
-  select * into v_existing from demo_recharges
+  perform pg_advisory_xact_lock(
+    hashtextextended('demo-membership|' || actor_uid, 0)
+  );
+
+  select * into v_existing
+  from membership_entitlements
   where uid=actor_uid and idempotency_key=p_idempotency_key;
+
   if found then
     if v_existing.request_hash is distinct from p_request_hash
-       or v_existing.plan_id is distinct from p_plan_id
        or v_existing.amount_fen is distinct from p_amount_fen
-       or v_existing.recharge_credits_per_cny is distinct from p_recharge_credits_per_cny
-       or v_existing.credit_microcredits is distinct from p_credit_microcredits
+       or v_existing.source is distinct from 'demo_purchase'
     then
       return jsonb_build_object('error_code','IDEMPOTENCY_CONFLICT');
     end if;
-    select * into v_wallet from credit_wallets where uid=actor_uid;
+    select max(ends_at) into v_current_expires
+    from membership_entitlements
+    where uid=actor_uid and tier='premium' and status='active'
+      and ends_at>v_now;
     return jsonb_build_object(
-      'id',v_existing.id,'credited',false,'plan_id',v_existing.plan_id,
-      'credit_microcredits',v_existing.credit_microcredits,
-      'balance_microcredits',v_wallet.balance_microcredits
+      'id',v_existing.id,'activated',false,'tier','premium',
+      'membership_expires_at',coalesce(v_current_expires,v_existing.ends_at)
     );
   end if;
 
-  insert into credit_wallets(uid) values(actor_uid) on conflict(uid) do nothing;
-  select * into v_wallet from credit_wallets where uid=actor_uid for update;
-  insert into demo_recharges(
-    id,uid,idempotency_key,request_hash,plan_id,amount_fen,
-    recharge_credits_per_cny,credit_microcredits
-  ) values(
-    p_recharge_id,actor_uid,p_idempotency_key,p_request_hash,p_plan_id,p_amount_fen,
-    p_recharge_credits_per_cny,p_credit_microcredits
+  select max(ends_at) into v_current_expires
+  from membership_entitlements
+  where uid=actor_uid and tier='premium' and status='active'
+    and ends_at>v_now;
+
+  v_starts := coalesce(v_current_expires,v_now);
+  v_ends := v_starts + interval '30 days';
+
+  insert into membership_entitlements(
+    id,uid,tier,starts_at,ends_at,status,source,provider_ref,
+    idempotency_key,request_hash,amount_fen
+  ) values (
+    p_entitlement_id,actor_uid,'premium',v_starts,v_ends,'active',
+    'demo_purchase',p_idempotency_key::text,
+    p_idempotency_key,p_request_hash,p_amount_fen
   );
-  update credit_wallets set
-    balance_microcredits=balance_microcredits+p_credit_microcredits,
-    updated_at=clock_timestamp()
-  where uid=actor_uid returning * into v_wallet;
-  insert into credit_ledger(
-    uid,event_key,kind,payment_order_id,balance_delta,balance_after,
-    ai_reserved_after,refund_reserved_after
-  ) values(
-    actor_uid,'demo-recharge:'||p_recharge_id,'payment_credit',p_recharge_id,
-    p_credit_microcredits,v_wallet.balance_microcredits,
-    v_wallet.ai_reserved_microcredits,v_wallet.refund_reserved_microcredits
-  );
+
   return jsonb_build_object(
-    'id',p_recharge_id,'credited',true,'plan_id',p_plan_id,
-    'credit_microcredits',p_credit_microcredits,
-    'balance_microcredits',v_wallet.balance_microcredits
+    'id',p_entitlement_id,'activated',true,'tier','premium',
+    'membership_expires_at',v_ends
   );
 end;
 $$;
@@ -1395,37 +1377,31 @@ end;
 $$;
 
 revoke all on billing_settings,membership_entitlements,daily_token_quotas,
-  credit_wallets,demo_recharges,ai_operations,credit_ledger,content_updates,
+  credit_wallets,ai_operations,credit_ledger,content_updates,
   reading_nodes from public;
 revoke execute on function _billing_assert_service_role(),_billing_sha256(jsonb),
   _billing_active_key(text,jsonb,text),_reading_segment_index(text,text,uuid),
   _reading_branch_visible(bigint,text,text,uuid,boolean),
   _billing_result_is_valid(ai_operations) from public;
-revoke execute on function apply_demo_recharge(
-  text,uuid,uuid,text,text,bigint,bigint,bigint
+revoke execute on function apply_demo_membership(
+  text,uuid,uuid,text,bigint
 ) from public;
 
 do $$
 begin
   if exists(select 1 from pg_roles where rolname='anon') then
-    execute 'revoke all on billing_settings,membership_entitlements,daily_token_quotas,credit_wallets,demo_recharges,ai_operations,credit_ledger,content_updates,reading_nodes from anon';
-    execute 'revoke execute on function apply_demo_recharge(text,uuid,uuid,text,text,bigint,bigint,bigint) from anon';
+    execute 'revoke all on billing_settings,membership_entitlements,daily_token_quotas,credit_wallets,ai_operations,credit_ledger,content_updates,reading_nodes from anon';
+    execute 'revoke execute on function apply_demo_membership(text,uuid,uuid,text,bigint) from anon';
   end if;
   if exists(select 1 from pg_roles where rolname='authenticated') then
-    execute 'revoke all on billing_settings,membership_entitlements,daily_token_quotas,credit_wallets,demo_recharges,ai_operations,credit_ledger,content_updates,reading_nodes from authenticated';
-    execute 'revoke execute on function apply_demo_recharge(text,uuid,uuid,text,text,bigint,bigint,bigint) from authenticated';
+    execute 'revoke all on billing_settings,membership_entitlements,daily_token_quotas,credit_wallets,ai_operations,credit_ledger,content_updates,reading_nodes from authenticated';
+    execute 'revoke execute on function apply_demo_membership(text,uuid,uuid,text,bigint) from authenticated';
   end if;
   if exists(select 1 from pg_roles where rolname='service_role') then
-    execute 'grant select,insert,update on billing_settings,membership_entitlements,daily_token_quotas,credit_wallets,demo_recharges,ai_operations,credit_ledger,content_updates,reading_nodes,reading_articles,distilled to service_role';
+    execute 'grant select,insert,update on billing_settings,membership_entitlements,daily_token_quotas,credit_wallets,ai_operations,credit_ledger,content_updates,reading_nodes,reading_articles,distilled to service_role';
     execute 'grant usage,select on all sequences in schema public to service_role';
-    execute 'grant execute on function get_billing_account(text),apply_demo_recharge(text,uuid,uuid,text,text,bigint,bigint,bigint),create_ai_quote(text,uuid,uuid,text,jsonb,jsonb,jsonb,timestamptz,timestamptz,timestamptz,bigint,bigint),reserve_ai_operation(text,uuid),claim_ai_operation(uuid),record_ai_result(uuid,uuid,jsonb,text),finalize_ai_operation(uuid),waive_ai_operation(uuid,text),begin_content_update(text,uuid,uuid,text,text,text,jsonb),claim_content_update(uuid),save_content_candidate(uuid,uuid,jsonb),mark_content_git_saved(uuid,uuid,text),publish_content_update(uuid,uuid),fail_content_update(uuid,uuid,text),list_private_segment_nodes(text,text,uuid,boolean),get_private_node(text,bigint,text,uuid,boolean),delete_private_node_tree(text,bigint,text,uuid) to service_role';
-    if not exists(
-      select 1 from pg_policies
-      where schemaname='public' and tablename='demo_recharges'
-        and policyname='demo_recharges_service_role_all'
-    ) then
-      execute 'create policy demo_recharges_service_role_all on demo_recharges for all to service_role using (true) with check (true)';
-    end if;
+    execute 'grant execute on function get_billing_account(text),apply_demo_membership(text,uuid,uuid,text,bigint),create_ai_quote(text,uuid,uuid,text,jsonb,jsonb,jsonb,timestamptz,timestamptz,timestamptz,bigint,bigint),reserve_ai_operation(text,uuid),claim_ai_operation(uuid),record_ai_result(uuid,uuid,jsonb,text),finalize_ai_operation(uuid),waive_ai_operation(uuid,text),begin_content_update(text,uuid,uuid,text,text,text,jsonb),claim_content_update(uuid),save_content_candidate(uuid,uuid,jsonb),mark_content_git_saved(uuid,uuid,text),publish_content_update(uuid,uuid),fail_content_update(uuid,uuid,text),list_private_segment_nodes(text,text,uuid,boolean),get_private_node(text,bigint,text,uuid,boolean),delete_private_node_tree(text,bigint,text,uuid) to service_role';
+
   end if;
 end;
 $$;

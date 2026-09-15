@@ -52,13 +52,11 @@ class Settings:
     DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
     DSH_MODEL = os.environ.get("DSH_MODEL", "deepseek-flash")
 
-    # 内容版本与积分计费。真实收费/充值默认关闭；缺少经过核验的参数时不得开启。
+    # 内容版本、积分计费与会员演示购买。
     CONTENT_GIT_DIR = os.environ.get("CONTENT_GIT_DIR", "")
     BILLING_ENABLED = os.environ.get("BILLING_ENABLED") == "1"
     RECHARGE_ENABLED = os.environ.get("RECHARGE_ENABLED") == "1"
-    RECHARGE_CREDITS_PER_CNY = os.environ.get("RECHARGE_CREDITS_PER_CNY", "")
     MODEL_TOKENIZER_DIR = os.environ.get("MODEL_TOKENIZER_DIR", "")
-    RECHARGE_PLANS_JSON = os.environ.get("RECHARGE_PLANS_JSON", "")
     CLOUDBASE_PAY_FUNCTION = os.environ.get("CLOUDBASE_PAY_FUNCTION", "")
 
     # 服务

@@ -930,11 +930,6 @@
                               start: state.draft.start, end: state.draft.end });
         }
         renderText($("rd-explain-body"), explainText, explainMarks);
-        if (tab.isRoot && !tab.nodeId) {
-          $("rd-explain-body").innerHTML = '<button type="button" class="rd-btn" id="rd-generate-init">生成本段解释</button>'
-            + '<p class="muted">按模型实际使用的 Token 扣积分，提交前显示最多冻结额度。</p>';
-          $("rd-generate-init").addEventListener("click", generateInitialExplain);
-        }
         // 恢复滚动位置（DOM 重建后；下一帧再校正一次，防止布局抖动影响）
         textEl.scrollTop = keepText;
         if (explainBox) explainBox.scrollTop = keepExplain;
@@ -1058,6 +1053,7 @@
         state.marks = state.rootMarks;
         renderProgress();
         renderActiveTab();   // 换段：不重置滚动（用户可自行滚动）
+        if (!payload.explain_id) generateInitialExplain();
         preloadSegment(payload.index + 1);   // 预加载下一段的解释，消除「我懂了」后的等待
         if (!readingTutorialStarted && window.KDTutorial) {
           readingTutorialStarted = true;
@@ -1275,10 +1271,6 @@
         });
         let operation = quote;
         if (quote.status !== "cache_hit") {
-        if (!window.confirm("本次最多冻结 " + quote.quoted_points
-            + " 积分，完成后只按实际 Token 扣除，多余冻结立即退回。是否继续？")) {
-          const err = new Error("已取消生成。"); err.code = "USER_CANCELLED"; throw err;
-        }
         const endpoint = action === "init" ? "/api/reading/init"
           : action === "advanced" ? "/api/reading/advanced"
           : (action === "explain" ? "/api/reading/selection" : "/api/reading/ask");
@@ -1381,14 +1373,25 @@
       }
 
       async function generateInitialExplain() {
-        const button = $("rd-generate-init");
-        if (button) { button.disabled = true; button.textContent = "生成中…"; }
+        if (!state.seg || state.seg.explain_id) return;
+        const segmentId = state.seg.segment_id;
+        if (state.initializingSegmentId === segmentId) return;
+        state.initializingSegmentId = segmentId;
+        $("rd-explain-body").textContent = "正在生成本段解释……";
         try {
           await runBilledGeneration("init", {});
-          await reloadCurrentSegment();
+          if (state.seg && state.seg.segment_id === segmentId) {
+            await reloadCurrentSegment();
+          }
         } catch (err) {
-          if (err.code !== "USER_CANCELLED") $("rd-ask-error").textContent = err.message;
-          renderActiveTab();
+          if (state.seg && state.seg.segment_id === segmentId) {
+            $("rd-ask-error").textContent = err.message;
+            renderActiveTab();
+          }
+        } finally {
+          if (state.initializingSegmentId === segmentId) {
+            state.initializingSegmentId = null;
+          }
         }
       }
 

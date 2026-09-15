@@ -25,10 +25,9 @@ def test_migration_matches_python_rpc_contracts():
     sql = _sql()
     expected = {
         "get_billing_account": ["actor_uid"],
-        "apply_demo_recharge": [
-            "actor_uid", "p_recharge_id", "p_idempotency_key",
-            "p_request_hash", "p_plan_id", "p_amount_fen",
-            "p_recharge_credits_per_cny", "p_credit_microcredits",
+        "apply_demo_membership": [
+            "actor_uid", "p_entitlement_id", "p_idempotency_key",
+            "p_request_hash", "p_amount_fen",
         ],
         "create_ai_quote": [
             "actor_uid", "p_operation_id", "p_idempotency_key", "p_request_hash",
@@ -79,7 +78,7 @@ def test_migration_pins_billing_and_recovery_contracts():
         "deepseek-flash", "total_tokens_1_to_1", "Asia/Shanghai",
         "standard_period_tokens = 50000", "premium_period_tokens = 500000",
         "premium_monthly_price_fen = 1990", "quota_reset_hour = 4",
-        "usage.total_tokens", "'advanced'", "recharge_enabled boolean not null default false",
+        "usage.total_tokens", "'advanced'",
     ):
         assert fixed_value in sql
 
@@ -105,20 +104,22 @@ def test_migration_rejects_direct_private_and_billing_access():
     assert "to service_role" in sql
 
 
-def test_demo_recharge_is_atomic_idempotent_and_ledgered():
+def test_demo_membership_is_atomic_idempotent_and_extends_active_term():
     sql = _sql()
-    assert "create table if not exists demo_recharges" in sql
-    assert "unique (uid, idempotency_key)" in sql
-    section = sql[sql.index("create or replace function apply_demo_recharge"):]
+    assert "membership_entitlements_uid_idempotency_uidx" in sql
+    section = sql[sql.index("create or replace function apply_demo_membership"):]
     section = section[:section.index("create or replace function create_ai_quote")]
     assert "pg_advisory_xact_lock" in section
+    assert "'demo-membership|' || actor_uid" in section
     assert "IDEMPOTENCY_CONFLICT" in section
-    assert "update credit_wallets set" in section
-    assert "'payment_credit'" in section
-    assert "alter table demo_recharges enable row level security" in sql
-    assert "demo_recharges_service_role_all" in sql
-    assert "revoke execute on function apply_demo_recharge" in sql
-
+    assert "p_amount_fen <> 1990" in section
+    assert "select max(ends_at) into v_current_expires" in section
+    assert "v_starts := coalesce(v_current_expires,v_now)" in section
+    assert "v_ends := v_starts + interval '30 days'" in section
+    assert "'demo_purchase'" in section
+    assert "demo_recharges" not in sql
+    assert "payment_credit" not in sql
+    assert "revoke execute on function apply_demo_membership" in sql
 
 def test_migration_does_not_mix_rowtype_and_scalar_into_targets():
     """PostgreSQL rejects a row variable in a multi-item INTO target list."""

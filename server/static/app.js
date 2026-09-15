@@ -697,57 +697,55 @@
   }
 
   async function loadBillingPanel() {
-    els.billingBalance.textContent = "正在读取积分……";
+    els.billingBalance.textContent = "正在读取会员状态……";
     els.billingPlans.innerHTML = "";
     try {
       const [accountData, plansData] = await Promise.all([
         api("/api/billing/account"), api("/api/billing/plans"),
       ]);
       const account = accountData.account || {};
-      els.billingBalance.textContent = "可用积分 "
-        + Number(account.wallet_available_points || 0).toLocaleString("zh-CN")
-        + " · 本周期免费额度剩余 "
-        + Number(account.daily_available_tokens || 0).toLocaleString("zh-CN");
-      const plans = plansData.recharge_available ? (plansData.plans || []) : [];
-      if (!plans.length) {
-        els.billingPlans.textContent = "当前没有可用充值档位。";
+      const premium = account.membership_tier === "premium";
+      els.billingBalance.textContent = (premium ? "高级会员" : "普通用户")
+        + " · 今日剩余 "
+        + Number(account.daily_available_tokens || 0).toLocaleString("zh-CN") + " Token"
+        + (premium && account.membership_expires_at
+          ? " · 到期 " + new Date(account.membership_expires_at).toLocaleDateString("zh-CN") : "");
+      const membership = plansData.membership || {};
+      if (!membership.available) {
+        els.billingPlans.textContent = "当前暂未开放会员购买。";
         return;
       }
-      els.billingPlans.innerHTML = plans.map((plan) =>
-        '<button class="btn-primary billing-plan" type="button" data-plan="'
-        + escapeHtml(plan.id) + '"><span>充值 '
-        + Number(plan.points || 0).toLocaleString("zh-CN") + ' 积分</span><span>¥'
-        + (Number(plan.amount_fen || 0) / 100).toFixed(2) + '</span></button>'
-      ).join("");
-      els.billingPlans.querySelectorAll("[data-plan]").forEach((button) => {
+      els.billingPlans.innerHTML = '<button class="btn-primary billing-plan" type="button" data-membership="premium">'
+        + '<span>' + (premium ? "续费高级会员 30 天" : "开通高级会员 30 天") + '</span><span>¥'
+        + (Number(membership.monthly_price_fen || 1990) / 100).toFixed(1) + '</span></button>';
+      els.billingPlans.querySelectorAll("[data-membership]").forEach((button) => {
         button.addEventListener("click", async () => {
-          const planId = button.getAttribute("data-plan");
-          const storageKey = "kd-recharge-idempotency:" + planId;
+          const storageKey = "kd-membership-idempotency:premium-30-days";
           let idempotencyKey = localStorage.getItem(storageKey);
           if (!idempotencyKey) {
             idempotencyKey = importId();
             localStorage.setItem(storageKey, idempotencyKey);
           }
           els.billingPlans.querySelectorAll("button").forEach((item) => { item.disabled = true; });
-          els.billingHint.textContent = "正在充值……";
+          els.billingHint.textContent = "正在开通会员……";
           try {
-            const result = await api("/api/billing/recharge", {
+            const result = await api("/api/billing/membership", {
               method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ plan_id: planId, idempotency_key: idempotencyKey }),
+              body: JSON.stringify({ idempotency_key: idempotencyKey }),
             });
             localStorage.removeItem(storageKey);
-            els.billingHint.textContent = result.credited
-              ? "充值成功，积分已到账。" : "这笔充值此前已到账，没有重复增加。";
+            els.billingHint.textContent = result.activated
+              ? "高级会员已生效。" : "这笔会员订单此前已生效，没有重复续期。";
             await loadAccountBadge();
             await loadBillingPanel();
           } catch (err) {
-            els.billingHint.textContent = "充值失败：" + err.message + "。再次点击会安全重试同一笔。";
+            els.billingHint.textContent = "开通失败：" + err.message + "。再次点击会安全重试同一笔。";
             els.billingPlans.querySelectorAll("button").forEach((item) => { item.disabled = false; });
           }
         });
       });
     } catch (err) {
-      els.billingBalance.textContent = "积分账户读取失败：" + err.message;
+      els.billingBalance.textContent = "会员状态读取失败：" + err.message;
     }
   }
 
