@@ -2,9 +2,12 @@
 """固定 1 Token = 1 积分的计费核心与薄数据库编排测试。"""
 import asyncio
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
+import main
 from core import billing
 from core.billing import (
     AIRequestIntent,
@@ -458,3 +461,67 @@ def test_record_result_normalizes_usage_before_rpc(monkeypatch):
     assert result == {"status": "result_recorded"}
     assert captured["name"] == "record_ai_result"
     assert captured["payload"]["p_result_json"]["usage"]["total_tokens"] == 350
+
+
+def test_recharge_plans_are_server_whitelisted(monkeypatch):
+    monkeypatch.setattr(main.settings, "RECHARGE_PLANS_JSON",
+                        '[{"id":"demo_10","amount_fen":100}]')
+    monkeypatch.setattr(main.settings, "RECHARGE_CREDITS_PER_CNY", "1000")
+    plans, rate = main._configured_recharge_plans()
+    assert rate == 1000
+    assert plans["demo_10"]["points"] == 1000
+    monkeypatch.setattr(main.settings, "RECHARGE_PLANS_JSON",
+                        '[{"id":"same","amount_fen":100},{"id":"same","amount_fen":200}]')
+    with pytest.raises(ValueError):
+        main._configured_recharge_plans()
+
+
+def test_demo_recharge_requires_login(monkeypatch):
+    monkeypatch.setattr(
+        main, "require_account",
+        lambda _request: (None, {"code": "LOGIN_REQUIRED", "message": "请登录"}),
+    )
+    response = asyncio.run(main.billing_recharge(SimpleNamespace()))
+    assert response.status_code == 401
+
+
+def test_demo_recharge_uses_server_plan_and_idempotency_key(monkeypatch):
+    idem = "00000000-0000-4000-8000-000000000001"
+    monkeypatch.setattr(main, "require_account", lambda _request: ("42", None))
+    monkeypatch.setattr(main.settings, "RECHARGE_ENABLED", True)
+    monkeypatch.setattr(main.settings, "RECHARGE_PLANS_JSON",
+                        '[{"id":"demo_10","amount_fen":100}]')
+    monkeypatch.setattr(main.settings, "RECHARGE_CREDITS_PER_CNY", "1000")
+    apply = AsyncMock(return_value={
+        "id": "00000000-0000-4000-8000-000000000002",
+        "credited": True, "balance_microcredits": 1_000_000_000,
+    })
+    monkeypatch.setattr(main.billing, "apply_demo_recharge", apply)
+    request = SimpleNamespace(json=AsyncMock(return_value={
+        "plan_id": "demo_10", "idempotency_key": idem,
+        "amount_fen": 1, "points": 999999,
+    }))
+    result = asyncio.run(main.billing_recharge(request))
+    assert result["ok"] is True and result["points_added"] == 1000
+    kwargs = apply.await_args.kwargs
+    assert kwargs["uid"] == "42"
+    assert kwargs["idempotency_key"] == idem
+    assert kwargs["amount_fen"] == 100
+    assert kwargs["credit_microcredits"] == 1_000_000_000
+
+
+def test_demo_recharge_rejects_plan_outside_server_whitelist(monkeypatch):
+    monkeypatch.setattr(main, "require_account", lambda _request: ("42", None))
+    monkeypatch.setattr(main.settings, "RECHARGE_ENABLED", True)
+    monkeypatch.setattr(main.settings, "RECHARGE_PLANS_JSON",
+                        '[{"id":"demo_10","amount_fen":100}]')
+    monkeypatch.setattr(main.settings, "RECHARGE_CREDITS_PER_CNY", "1000")
+    apply = AsyncMock()
+    monkeypatch.setattr(main.billing, "apply_demo_recharge", apply)
+    request = SimpleNamespace(json=AsyncMock(return_value={
+        "plan_id": "forged", "idempotency_key":
+        "00000000-0000-4000-8000-000000000001",
+    }))
+    response = asyncio.run(main.billing_recharge(request))
+    assert response.status_code == 422
+    apply.assert_not_awaited()

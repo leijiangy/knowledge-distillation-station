@@ -37,6 +37,10 @@
     fulltextModal: $("fulltext-modal"), fulltextBackdrop: $("fulltext-backdrop"),
     fulltextClose: $("fulltext-close"), fulltextTitle: $("fulltext-title"),
     fulltextMeta: $("fulltext-meta"), fulltextBody: $("fulltext-body"),
+    billingModal: $("billing-modal"), billingBackdrop: $("billing-backdrop"),
+    billingClose: $("billing-close"), billingBalance: $("billing-balance"),
+    billingPlans: $("billing-plans"), billingHint: $("billing-hint"),
+    billingLogout: $("billing-logout"),
     distillGuide: $("distill-guide"), distillGuideClose: $("distill-guide-close"),
     distillGuideDot: $("distill-guide-dot"), distillGuideTitle: $("distill-guide-title"),
     distillGuideBody: $("distill-guide-body"),
@@ -692,6 +696,61 @@
     } catch (_) { /* 计费库尚未部署时保留普通登录文案 */ }
   }
 
+  async function loadBillingPanel() {
+    els.billingBalance.textContent = "正在读取积分……";
+    els.billingPlans.innerHTML = "";
+    try {
+      const [accountData, plansData] = await Promise.all([
+        api("/api/billing/account"), api("/api/billing/plans"),
+      ]);
+      const account = accountData.account || {};
+      els.billingBalance.textContent = "可用积分 "
+        + Number(account.wallet_available_points || 0).toLocaleString("zh-CN")
+        + " · 本周期免费额度剩余 "
+        + Number(account.daily_available_tokens || 0).toLocaleString("zh-CN");
+      const plans = plansData.recharge_available ? (plansData.plans || []) : [];
+      if (!plans.length) {
+        els.billingPlans.textContent = "当前没有可用充值档位。";
+        return;
+      }
+      els.billingPlans.innerHTML = plans.map((plan) =>
+        '<button class="btn-primary billing-plan" type="button" data-plan="'
+        + escapeHtml(plan.id) + '"><span>充值 '
+        + Number(plan.points || 0).toLocaleString("zh-CN") + ' 积分</span><span>¥'
+        + (Number(plan.amount_fen || 0) / 100).toFixed(2) + '</span></button>'
+      ).join("");
+      els.billingPlans.querySelectorAll("[data-plan]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const planId = button.getAttribute("data-plan");
+          const storageKey = "kd-recharge-idempotency:" + planId;
+          let idempotencyKey = localStorage.getItem(storageKey);
+          if (!idempotencyKey) {
+            idempotencyKey = importId();
+            localStorage.setItem(storageKey, idempotencyKey);
+          }
+          els.billingPlans.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+          els.billingHint.textContent = "正在充值……";
+          try {
+            const result = await api("/api/billing/recharge", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ plan_id: planId, idempotency_key: idempotencyKey }),
+            });
+            localStorage.removeItem(storageKey);
+            els.billingHint.textContent = result.credited
+              ? "充值成功，积分已到账。" : "这笔充值此前已到账，没有重复增加。";
+            await loadAccountBadge();
+            await loadBillingPanel();
+          } catch (err) {
+            els.billingHint.textContent = "充值失败：" + err.message + "。再次点击会安全重试同一笔。";
+            els.billingPlans.querySelectorAll("button").forEach((item) => { item.disabled = false; });
+          }
+        });
+      });
+    } catch (err) {
+      els.billingBalance.textContent = "积分账户读取失败：" + err.message;
+    }
+  }
+
   function renderFavLists() {
     if (!favlists.length) {
       els.favSub.innerHTML = `<div class="nav-sub-loading">没有可用的收藏夹</div>`;
@@ -995,11 +1054,17 @@
   els.retryBtn.addEventListener("click", () => loadCollections(null, false));
   els.userBlock.addEventListener("click", async () => {
     if (status && status.authorized) {
-      await api("/api/oauth/logout", { method: "POST" });
-      location.href = "/";
+      openModal(els.billingModal);
+      await loadBillingPanel();
       return;
     }
     if (status && status.callback_configured) location.href = "/api/oauth/start";
+  });
+  els.billingClose.addEventListener("click", () => closeModal(els.billingModal));
+  els.billingBackdrop.addEventListener("click", () => closeModal(els.billingModal));
+  els.billingLogout.addEventListener("click", async () => {
+    await api("/api/oauth/logout", { method: "POST" });
+    location.href = "/";
   });
   // 学习记录：侧边栏下拉会话列表（点条目恢复阅读位置）
   let histListLoaded = false;

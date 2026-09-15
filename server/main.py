@@ -1259,6 +1259,31 @@ async def billing_ledger(request: Request, limit: int = 20,
             "next_before_id": items[-1]["id"] if len(items) == max(1, min(limit, 100)) else None}
 
 
+def _configured_recharge_plans() -> tuple[dict[str, dict], int]:
+    raw_plans = json.loads(settings.RECHARGE_PLANS_JSON or "[]")
+    rate = int(settings.RECHARGE_CREDITS_PER_CNY)
+    if not isinstance(raw_plans, list) or not raw_plans or rate <= 0:
+        raise ValueError("充值档位配置为空")
+    plans: dict[str, dict] = {}
+    for raw in raw_plans:
+        if not isinstance(raw, dict):
+            raise ValueError("充值档位必须是对象")
+        plan_id = raw.get("id")
+        amount = raw.get("amount_fen")
+        if (not isinstance(plan_id, str)
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", plan_id) is None
+                or isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0
+                or plan_id in plans):
+            raise ValueError("充值档位ID或金额无效")
+        credit = billing.recharge_microcredits(amount, rate)
+        plans[plan_id] = {
+            "id": plan_id, "amount_fen": amount,
+            "points": credit // billing.MICROCREDITS_PER_CREDIT,
+            "credit_microcredits": credit,
+        }
+    return plans, rate
+
+
 @app.get("/api/billing/plans")
 async def billing_plans(request: Request):
     _uid, error = require_account(request)
@@ -1270,24 +1295,67 @@ async def billing_plans(request: Request):
                                "monthly_price_fen": billing.PREMIUM_MONTHLY_PRICE_FEN,
                                "daily_token_limit": billing.PREMIUM_DAILY_TOKENS}}
     try:
-        plans = json.loads(settings.RECHARGE_PLANS_JSON or "[]")
-        rate = int(settings.RECHARGE_CREDITS_PER_CNY)
-        if not isinstance(plans, list) or rate <= 0:
-            raise ValueError
-        public = []
-        for plan in plans:
-            if not isinstance(plan, dict) or not isinstance(plan.get("amount_fen"), int):
-                raise ValueError
-            amount = int(plan["amount_fen"])
-            public.append({"id": str(plan.get("id") or ""), "amount_fen": amount,
-                           "points": billing.recharge_microcredits(amount, rate) //
-                                     billing.MICROCREDITS_PER_CREDIT})
+        plans, _rate = _configured_recharge_plans()
+        public = [
+            {key: plan[key] for key in ("id", "amount_fen", "points")}
+            for plan in plans.values()
+        ]
     except (TypeError, ValueError, billing.BillingError):
         return api_error("BILLING_CONFIG_UNAVAILABLE", "充值档位配置不可用。", 503)
     return {"ok": True, "recharge_available": True, "plans": public,
             "membership": {"available": False, "tier": "premium",
                            "monthly_price_fen": billing.PREMIUM_MONTHLY_PRICE_FEN,
                            "daily_token_limit": billing.PREMIUM_DAILY_TOKENS}}
+
+
+@app.post("/api/billing/recharge")
+async def billing_recharge(request: Request):
+    uid, error = require_account(request)
+    if error:
+        return api_error(error["code"], error["message"], 401)
+    if not settings.RECHARGE_ENABLED:
+        return api_error("RECHARGE_UNAVAILABLE", "积分充值尚未启用。", 503)
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("请求体必须是对象")
+        plan_id = body.get("plan_id")
+        if not isinstance(plan_id, str):
+            raise ValueError("plan_id必须是字符串")
+        idempotency_key = _canonical_uuid(
+            body.get("idempotency_key"), "idempotency_key"
+        )
+        plans, rate = _configured_recharge_plans()
+        plan = plans.get(plan_id)
+        if plan is None:
+            return api_error("INVALID_RECHARGE_PLAN", "请选择有效的充值档位。", 422)
+    except (json.JSONDecodeError, TypeError, ValueError, billing.BillingError) as exc:
+        return api_error("INVALID_INPUT", str(exc) or "充值请求无效。", 422)
+    request_hash = billing.stable_json_hash({
+        "plan_id": plan["id"],
+        "amount_fen": plan["amount_fen"],
+        "recharge_credits_per_cny": rate,
+        "credit_microcredits": plan["credit_microcredits"],
+    })
+    try:
+        row = await billing.apply_demo_recharge(
+            uid=uid, recharge_id=str(uuid4()), idempotency_key=idempotency_key,
+            request_hash_value=request_hash, plan_id=plan["id"],
+            amount_fen=plan["amount_fen"],
+            recharge_credits_per_cny=rate,
+            credit_microcredits=plan["credit_microcredits"],
+        )
+    except Exception as exc:
+        print(f"[billing] 演示充值失败：{exc}")
+        return api_error("DEPENDENCY_UNAVAILABLE", "充值暂时失败，请重试。", 503)
+    if row.get("error_code") == "IDEMPOTENCY_CONFLICT":
+        return api_error("IDEMPOTENCY_CONFLICT", "同一充值请求对应了不同套餐。", 409)
+    credited = row.get("credited") is True
+    return {"ok": True, "recharge_id": str(row.get("id") or ""),
+            "credited": credited, "plan_id": plan["id"],
+            "points": plan["points"],
+            "points_added": plan["points"] if credited else 0,
+            "balance_points": _points(row.get("balance_microcredits"))}
 
 
 async def _require_advanced_member(uid: str):

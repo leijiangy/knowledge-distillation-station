@@ -25,6 +25,11 @@ def test_migration_matches_python_rpc_contracts():
     sql = _sql()
     expected = {
         "get_billing_account": ["actor_uid"],
+        "apply_demo_recharge": [
+            "actor_uid", "p_recharge_id", "p_idempotency_key",
+            "p_request_hash", "p_plan_id", "p_amount_fen",
+            "p_recharge_credits_per_cny", "p_credit_microcredits",
+        ],
         "create_ai_quote": [
             "actor_uid", "p_operation_id", "p_idempotency_key", "p_request_hash",
             "p_intent", "p_messages", "p_billing_policy", "p_quoted_at",
@@ -95,9 +100,21 @@ def test_migration_rejects_direct_private_and_billing_access():
     assert "request.jwt.claim.role" in sql
     assert "v_role is distinct from 'service_role'" in sql
     assert "revoke all on billing_settings" in sql
-    assert "content_updates,reading_nodes from public" in sql
+    assert re.search(r"content_updates,\s*reading_nodes from public", sql)
     assert "grant execute on function get_billing_account" in sql
     assert "to service_role" in sql
+
+
+def test_demo_recharge_is_atomic_idempotent_and_ledgered():
+    sql = _sql()
+    assert "create table if not exists demo_recharges" in sql
+    assert "unique (uid, idempotency_key)" in sql
+    section = sql[sql.index("create or replace function apply_demo_recharge"):]
+    section = section[:section.index("create or replace function create_ai_quote")]
+    assert "pg_advisory_xact_lock" in section
+    assert "IDEMPOTENCY_CONFLICT" in section
+    assert "update credit_wallets set" in section
+    assert "'payment_credit'" in section
 
 
 def test_migration_does_not_mix_rowtype_and_scalar_into_targets():

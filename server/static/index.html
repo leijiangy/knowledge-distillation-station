@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>知识蒸馏站 · 把收藏夹变成学习进度表</title>
   <script src="/bg.js?v=5"></script>
-  <link rel="stylesheet" href="/style.css?v=14"></head>
+  <link rel="stylesheet" href="/style.css?v=15"></head>
 <body>
   <canvas id="bg-canvas" aria-hidden="true"></canvas>
   <!-- 首次访问产品介绍：示例独立于收藏与精读数据 -->
@@ -456,6 +456,18 @@
     </div>
   </div>
 
+  <div class="modal" id="billing-modal" hidden>
+    <div class="modal-backdrop" id="billing-backdrop"></div>
+    <div class="modal-panel">
+      <button class="modal-close" id="billing-close" aria-label="关闭">×</button>
+      <h3 class="modal-title">积分账户</h3>
+      <p class="modal-sub" id="billing-balance">正在读取积分……</p>
+      <div class="billing-plans" id="billing-plans"></div>
+      <p class="modal-sub" id="billing-hint">充值为演示功能，选择档位后积分立即到账。</p>
+      <button class="btn-ghost btn-small" id="billing-logout" type="button">退出登录</button>
+    </div>
+  </div>
+
   <script src="/tutorial.js?v=2"></script>
-  <script src="/app.js?v=10"></script></body>
+  <script src="/app.js?v=11"></script></body>
 </html>
