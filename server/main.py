@@ -1099,10 +1099,16 @@ async def reading_history(request: Request):
         return {"ok": False, "error": {"code": "DB_FAILED", "message": "读取学习记录失败，请稍后再试。"}}
     items = []
     for row in rows[:30]:
-        art = await store.get(row["article_key"])
-        if not art:
+        try:
+            art = await store.get(row["article_key"])
+            if not art:
+                continue
+            plan = await reading_store.get_article(
+                row["article_key"], row.get("git_commit")
+            )
+        except Exception as exc:
+            print(f"[reading] 跳过无法读取的学习记录 {row.get('article_key')}: {exc}")
             continue
-        plan = await reading_store.get_article(row["article_key"], row.get("git_commit"))
         total = len((plan or {}).get("cuts") or []) + 1
         items.append({"url": row["article_key"], "title": art.get("title") or row["article_key"],
                       "seg": row["seg_index"], "segment_id": row.get("segment_id"),

@@ -3,7 +3,10 @@
 import asyncio
 
 import httpx
+from unittest.mock import AsyncMock
+from types import SimpleNamespace
 
+import main
 from core import reading_store
 from core.reading_store import collapse_history
 
@@ -69,3 +72,29 @@ def test_list_recent_opened_falls_back_for_legacy_columns(monkeypatch):
     assert rows == [{"article_key": "a", "seg_index": 2, "at": 100}]
     assert calls[0]["select"] == "article_key,git_commit,segment_id,seg_index,at"
     assert calls[1]["select"] == "article_key,seg_index,at"
+
+
+def test_history_endpoint_skips_one_unreadable_article(monkeypatch):
+    monkeypatch.setattr(main, "require_account", lambda _request: ("u", None))
+    monkeypatch.setattr(
+        main.reading_store, "list_recent_opened",
+        AsyncMock(return_value=[
+            {"article_key": "bad", "seg_index": 1, "at": 200},
+            {"article_key": "good", "seg_index": 2, "at": 100},
+        ]),
+    )
+    monkeypatch.setattr(
+        main.store, "get",
+        AsyncMock(side_effect=[RuntimeError("legacy row"), {"title": "可读文章"}]),
+    )
+    monkeypatch.setattr(
+        main.reading_store, "get_article",
+        AsyncMock(return_value={"cuts": [10, 20]}),
+    )
+
+    result = asyncio.run(main.reading_history(SimpleNamespace()))
+    assert result["ok"] is True
+    assert result["items"] == [{
+        "url": "good", "title": "可读文章", "seg": 2,
+        "segment_id": None, "version": None, "total": 3, "at": 100,
+    }]
