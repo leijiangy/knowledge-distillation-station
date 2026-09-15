@@ -635,7 +635,7 @@ begin
       and billing_rule='total_tokens_1_to_1' and text_model='deepseek-flash'
       and quota_timezone='Asia/Shanghai' and quota_reset_hour=4
       and standard_period_tokens=50000 and premium_period_tokens=500000
-      and premium_monthly_price_fen=1990 and not recharge_enabled
+      and premium_monthly_price_fen=1990
   ) then raise exception using errcode='55000', message='BILLING_CONFIG_UNAVAILABLE'; end if;
   if nullif(btrim(actor_uid),'') is null or v_action not in ('init','explain','ask','advanced')
      or nullif(v_article,'') is null or nullif(v_commit,'') is null

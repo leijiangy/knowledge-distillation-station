@@ -121,6 +121,13 @@ def test_demo_membership_is_atomic_idempotent_and_extends_active_term():
     assert "payment_credit" not in sql
     assert "revoke execute on function apply_demo_membership" in sql
 
+def test_create_quote_does_not_reference_removed_recharge_columns():
+    sql = _sql()
+    section = sql[sql.index("create or replace function create_ai_quote"):]
+    section = section[:section.index("create or replace function reserve_ai_operation")]
+    assert "recharge_enabled" not in section
+    assert "recharge_credits_per_cny" not in section
+
 def test_migration_does_not_mix_rowtype_and_scalar_into_targets():
     """PostgreSQL rejects a row variable in a multi-item INTO target list."""
     sql = _sql()
