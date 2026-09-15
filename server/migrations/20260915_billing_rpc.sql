@@ -172,6 +172,20 @@ create table if not exists credit_ledger (
   created_at timestamptz not null default now()
 );
 
+-- 早期部署可能已用较窄的自动命名 CHECK；CREATE TABLE IF NOT EXISTS 不会更新它们。
+alter table ai_operations drop constraint if exists ai_operations_status_check;
+alter table ai_operations add constraint ai_operations_status_check check (
+  status in (
+    'quoted', 'reserved', 'dispatched', 'result_recorded', 'settled',
+    'cache_hit', 'quote_expired', 'waived_not_dispatched',
+    'waived_failure', 'waived_unknown'
+  )
+);
+alter table credit_ledger drop constraint if exists credit_ledger_kind_check;
+alter table credit_ledger add constraint credit_ledger_kind_check check (
+  kind in ('ai_reserve', 'ai_settle', 'ai_release', 'payment_credit')
+);
+
 create index if not exists credit_ledger_uid_id_idx on credit_ledger (uid, id desc);
 
 create table if not exists content_updates (

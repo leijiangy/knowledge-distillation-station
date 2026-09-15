@@ -125,7 +125,7 @@ def test_demo_membership_is_atomic_idempotent_and_extends_active_term():
     assert "v_ends := v_starts + interval '30 days'" in section
     assert "'demo_purchase'" in section
     assert "demo_recharges" not in sql
-    assert "payment_credit" not in sql
+    assert sql.count("payment_credit") == 1  # 仅保留旧账本行的 CHECK 兼容值
     assert "revoke execute on function apply_demo_membership" in sql
 
 def test_create_quote_does_not_reference_removed_recharge_columns():
@@ -134,6 +134,13 @@ def test_create_quote_does_not_reference_removed_recharge_columns():
     section = section[:section.index("create or replace function reserve_ai_operation")]
     assert "recharge_enabled" not in section
     assert "recharge_credits_per_cny" not in section
+
+def test_migration_upgrades_early_billing_check_constraints():
+    sql = _sql().lower()
+    assert "drop constraint if exists ai_operations_status_check" in sql
+    assert "'quoted', 'reserved', 'dispatched', 'result_recorded', 'settled'" in sql
+    assert "drop constraint if exists credit_ledger_kind_check" in sql
+    assert "'ai_reserve', 'ai_settle', 'ai_release', 'payment_credit'" in sql
 
 def test_migration_does_not_mix_rowtype_and_scalar_into_targets():
     """PostgreSQL rejects a row variable in a multi-item INTO target list."""
