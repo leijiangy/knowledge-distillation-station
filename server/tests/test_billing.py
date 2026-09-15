@@ -347,6 +347,12 @@ def test_canonical_json_rejects_float_and_non_string_keys():
         stable_json_hash({1: "bad"})
 
 
+def test_prompt_token_bound_ignores_float_sampling_controls():
+    prepared = main.ai.prepare_explain_segment("标题", "主旨", "需要解释的段落")
+    assert isinstance(prepared["temperature"], float)
+    assert main._prepared_input_token_upper_bound(prepared) > 256
+
+
 def test_idempotent_and_result_replay_validation():
     validate_idempotent_replay("abc", "abc")
     with pytest.raises(BillingError) as exc:

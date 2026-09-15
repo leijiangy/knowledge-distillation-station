@@ -1164,13 +1164,16 @@ def _public_operation(row: dict) -> dict:
 
 
 def _prepared_input_token_upper_bound(prepared: dict) -> int:
-    """Conservative pre-dispatch bound; settlement always uses provider total_tokens.
+    """Conservative prompt bound; settlement uses provider total_tokens.
 
-    A tokenizer token cannot contain less than one input byte. Counting the complete
-    canonical provider payload in UTF-8 bytes, plus protocol headroom, therefore
-    deliberately over-reserves without underestimating the eventual input usage.
+    Only messages contribute input tokens. Sampling controls such as temperature are
+    excluded from the immutable byte count, while protocol headroom covers role and
+    message framing.
     """
-    return len(billing.canonical_json_bytes(prepared)) + 256
+    messages = prepared.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise billing.BillingError("INVALID_INPUT", "模型消息不能为空")
+    return len(billing.canonical_json_bytes({"messages": messages})) + 256
 
 
 async def _quote_context(request: Request, body: dict):
